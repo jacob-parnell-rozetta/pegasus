@@ -19,6 +19,7 @@ import re
 
 from absl import logging
 from pegasus.ops import public_parsing_ops
+from pegasus.eval import text_eval
 from tensor2tensor.utils import adafactor
 import tensorflow as tf
 
@@ -121,26 +122,18 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       with contrib_tpu.bfloat16_scope():
         loss, outputs = model_params.model()(features, training)
     else:
-      # we run this to get the loss and the outputs HERE - but at the end of the training stepss
-      # model_params should be the name of the model e.g. cnn_dailymail_transformer
-      # FROM pegasus/models/transformer.py
-      # Models contain embedding, encoding, and loss functions, and expect text ids as
-      # inputs. All models have same format as below:
-      #   model = TransformerModel(...)
-      #   loss, output = model(features, training)
-      # Features and outputs are dictionary of tensors. Features usually inlucdes inputs
-      # and targets ids.
-
-      # ALSO FROM pegasus/models/transformer.py
-      # features: dictionary of tensors including "inputs" [batch, input_len] and "targets" [batch, output_len]
-      # training: bool of whether the mode is training.
-      # this will return -> Tuple of (loss, outputs):
-      # Loss is a scalar. Output is a dictionary of tensors, containing model's output logits.
       loss, outputs = model_params.model()(features, training)
 
-    # TPU requires ouputs all have batch dimension and doesn't handle scalar.
+    # TPU requires outputs all have batch dimension and doesn't handle scalar.
     # Tile all scalars to 1 dimension vector.
     outputs = _tile_scalar_to_batch_size(outputs, model_params.batch_size)
+
+    # Will this add to the logging?
+    logging.info("*** LOSS: {} ***".format(loss))
+    logging.info("*** LOGITS: {} ***".format(outputs["logits"]))
+    # logging.info("*** TARGETS: {} ***".format(outputs["targets"]))
+    # logging.info("*** TARGETS_MASK: {} ***".format(outputs["target_mask"]))
+    # logging.info("*** ONE_HOT: {} ***".format(outputs["one_hot_labels"]))
 
     if mode == tf.estimator.ModeKeys.TRAIN:
       init_lr = model_params.learning_rate
@@ -158,15 +151,57 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       if use_tpu:
         optimizer = tpu_optimizer.CrossShardOptimizer(optimizer)
 
-      # minimising the loss through max likelihood obj here?
-      # plan would be to combine this loss with an 'RL' loss (incorporating ROUGE)
-      train_op = optimizer.minimize(loss, global_step=global_step)
+      # REINFORCE
+      # Sampling the logits as simple as:
+      # y = tf.distributions.Categorical(logits_BxTxV, dtype=tf.int64)
+
+      # Alternatively could utilise
+      u = tf.random_uniform(shape=outputs["targets"].get_shape().as_list(), minval=0, maxval=1,
+                            dtype=tf.float32)
+      logp = tf.log(tf.math.softmax(outputs["logits"]))  # brings back the logits to normalised
+      # log-prob
+      z = -tf.log(-tf.log(u)) + logp  # computes the Gumbel samples "with location"
+      y_soft = tf.math.softmax(tf.div(z, 0.1))  # computes the "soft" labels
+      y = tf.math.argmax(y_soft)  # computes the corresponding one-hot labels - convert to numpy
+
+      # Calculate ROUGE
+      # Convert IDs to predictions using vocab
+      # encoder = public_parsing_ops.create_text_encoder("sentencepiece",
+      # "ckpt/pegasus_ckpt/c4.unigram.newline.10pct.96000.model")
+
+      # target_ids = tf.make_ndarray(y)
+      # pred_ids = tf.make_ndarray(y)  # takes the one_hot labels tensor, and converts to np.array
+      # decode_pred_text = text_eval.ids2str(encoder, pred_ids, None)
+      # decode_target_text = text_eval.ids2str(encoder, target_ids, None)
+
+      # from rouge_score import rouge_scorer
+      # scorer = rouge_scorer.RougeScorer(["rouge1", "rouge2", "rougeL", "rougeLsum"],
+      # use_stemmer=True)
+      # scorer.score(decode_target_text, decode_pred_text)
+      # Output all ROUGE scores - will want to implement one/all of these w/ F1-measure
+
+
+      # Implement REINFORCE loss
+      # reinforce_loss = ROUGE-F1 * logp
+      # combined_loss = tf.math.add(loss, reinforce_loss)
+
+      # Implement RELAX loss
+
+      # Accessing the gradient of loss
+      list_of_gradient_variable_pairs = optimizer.compute_gradients(loss)
+      train_op = optimizer.apply_gradients(list_of_gradient_variable_pairs, global_step=global_step)
+
+      # train_op = optimizer.minimize(loss, global_step=global_step)
+
+      tf.logging.set_verbosity(tf.logging.INFO)
+      logging_hook = tf.train.LoggingTensorHook({"loss": loss}, every_n_iter=5)
 
       # This is the configured estimator function that is returned to train the model
       return tpu_estimator.TPUEstimatorSpec(
           mode=mode,
           loss=loss,
           train_op=train_op,
+          training_hooks=[logging_hook],
           scaffold_fn=_load_vars_from_checkpoint(use_tpu,
                                                  train_init_checkpoint),
           host_call=add_scalars_to_summary(model_dir, {"learning_rate": lr}))
