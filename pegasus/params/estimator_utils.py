@@ -131,9 +131,6 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
     # Will this add to the logging?
     logging.info("*** LOSS: {} ***".format(loss))
     logging.info("*** LOGITS: {} ***".format(outputs["logits"]))
-    # logging.info("*** TARGETS: {} ***".format(outputs["targets"]))
-    # logging.info("*** TARGETS_MASK: {} ***".format(outputs["target_mask"]))
-    # logging.info("*** ONE_HOT: {} ***".format(outputs["one_hot_labels"]))
 
     if mode == tf.estimator.ModeKeys.TRAIN:
       init_lr = model_params.learning_rate
@@ -173,19 +170,21 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
 
       # Calculate ROUGE
       # Convert IDs to predictions using vocab
-      # encoder = public_parsing_ops.create_text_encoder("sentencepiece",
-      #                                                  "ckpt/pegasus_ckpt/c4.unigram.newline.10pct.96000.model")
+      encoder = public_parsing_ops.create_text_encoder("sentencepiece",
+                                                       "ckpt/pegasus_ckpt/c4.unigram.newline.10pct.96000.model")
 
-      # Create id arrays
+      # Create id arrays - can't be done eagerly
       # target_ids = outputs["targets"].eval(session=tf.compat.v1.Session())
       # pred_ids = tf.make_ndarray(y)  # takes the one_hot labels tensor, and converts to np.array
       # decode_pred_text = text_eval.ids2str(encoder, pred_ids, None)
       # decode_target_text = text_eval.ids2str(encoder, target_ids, None)
 
       # from rouge_score import rouge_scorer
-      # scorer = rouge_scorer.RougeScorer(["rouge1", "rouge2", "rougeL", "rougeLsum"],
-      # use_stemmer=True)
-      # scorer.score(decode_target_text, decode_pred_text)
+      # scorer = rouge_scorer.RougeScorer(["rouge1", "rouge2", "rougeL"], use_stemmer=True)
+      # r_score = scorer.score(decode_target_text, decode_pred_text)
+      # r_score_f1 = {el:0 for el in list(r_score.keys())}  # set empty rouge dict
+      # r_score_f1.update({'rouge1':list(r_score['rouge1'])[2], 'rouge2':list(r_score['rouge2'])[
+      # 2], 'rougeL':list(r_score['rougeL'])[2]})
       # Output all ROUGE scores - will want to implement one/all of these w/ F1-measure
 
       # Implement REINFORCE loss
@@ -202,8 +201,8 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # train_op = optimizer.minimize(loss, global_step=global_step)
 
       tf.logging.set_verbosity(tf.logging.INFO)
-      logging_hook = tf.train.LoggingTensorHook({"loss": loss, "sampled_y": sample_y},
-                                                every_n_iter=5)
+      logging_hook = tf.train.LoggingTensorHook({"loss": loss, "sampled_y": sample_y, "targets":
+          outputs["targets"]}, every_n_iter=5)
 
       # This is the configured estimator function that is returned to train the model
       return tpu_estimator.TPUEstimatorSpec(
