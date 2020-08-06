@@ -152,29 +152,32 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
         optimizer = tpu_optimizer.CrossShardOptimizer(optimizer)
 
       # REINFORCE
-      # Sampling the logits as simple as:
+      # Sampling the logits as simple as: ** ERROR - list of tensors**
       # y = tf.distributions.Categorical(outputs["logits"], dtype=tf.int64)
 
-      # Alternatively could utilise
+      # Alternative:
       u = tf.random_uniform(shape=outputs["targets"].get_shape().as_list(), minval=0, maxval=1,
                             dtype=tf.float32)
-      # new_u = tf.tile(u, tf.constant([1, 1, 96103], tf.int32), tf.float32)  # have a bigger u tensor, by vocab size
-      new_u = tf.reshape(tf.repeat(u, repeats=[96103], axis=0), outputs[
-          "logits"].get_shape().as_list())  # need to return shape of logits and vocab size
-      logp = tf.log(
-          tf.math.softmax(outputs["logits"]))  # brings back the logits to normalised log-prob
-      z = tf.math.add(-tf.log(-tf.log(new_u)),
-                      logp)  # computes the Gumbel samples "with location"
-      y_soft = tf.math.softmax(tf.div(z, 0.1))  # computes the "soft" labels
-      sample_y = tf.math.argmax(
-          y_soft)  # computes the corresponding one-hot labels - convert to numpy
+
+      # Need u to have shape BxTxV to add to logp, repeat it by vocab size
+      new_u = tf.reshape(tf.repeat(u, repeats=[96103], axis=0), outputs["logits"].get_shape(
+      ).as_list())
+
+      # Normalise logits to log-prob, and compute Gumbel samples with location
+      logp = tf.log(tf.math.softmax(outputs["logits"]))
+      z = tf.math.add(-tf.log(-tf.log(new_u)), logp)
+
+      # Compute the 'soft' labels of the Gumbel samples, and compute their one-hot labels
+      y_soft = tf.math.softmax(tf.div(z, 0.1))
+      sample_y = tf.math.argmax(y_soft, axis=2)  # argmax along the vocab dimension
 
       # Calculate ROUGE
       # Convert IDs to predictions using vocab
-      # encoder = public_parsing_ops.create_text_encoder("sentencepiece",
-      # "ckpt/pegasus_ckpt/c4.unigram.newline.10pct.96000.model")
+      encoder = public_parsing_ops.create_text_encoder("sentencepiece",
+                                                       "ckpt/pegasus_ckpt/c4.unigram.newline.10pct.96000.model")
 
-      # target_ids = tf.make_ndarray(y)
+      # Create id arrays
+      target_ids = outputs["targets"].eval(session=tf.compat.v1.Session())
       # pred_ids = tf.make_ndarray(y)  # takes the one_hot labels tensor, and converts to np.array
       # decode_pred_text = text_eval.ids2str(encoder, pred_ids, None)
       # decode_target_text = text_eval.ids2str(encoder, target_ids, None)
@@ -199,7 +202,8 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # train_op = optimizer.minimize(loss, global_step=global_step)
 
       tf.logging.set_verbosity(tf.logging.INFO)
-      logging_hook = tf.train.LoggingTensorHook({"loss": loss, "sampled_y": sample_y},
+      logging_hook = tf.train.LoggingTensorHook({"loss": loss, "sampled_y": sample_y,
+                                                 "target_ids": target_ids},
                                                 every_n_iter=5)
 
       # This is the configured estimator function that is returned to train the model
