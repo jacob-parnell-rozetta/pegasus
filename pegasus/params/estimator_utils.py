@@ -202,8 +202,7 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # train_op = optimizer.minimize(loss, global_step=global_step)
 
       tf.logging.set_verbosity(tf.logging.INFO)
-      logging_hook = tf.train.LoggingTensorHook({"loss": loss, "sampled_y": sample_y,
-                                                 "target_ids": target_ids},
+      logging_hook = tf.train.LoggingTensorHook({"loss": loss, "sampled_y": sample_y},
                                                 every_n_iter=5)
 
       # This is the configured estimator function that is returned to train the model
