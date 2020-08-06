@@ -173,11 +173,11 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
 
       # Calculate ROUGE
       # Convert IDs to predictions using vocab
-      encoder = public_parsing_ops.create_text_encoder("sentencepiece",
-                                                       "ckpt/pegasus_ckpt/c4.unigram.newline.10pct.96000.model")
+      # encoder = public_parsing_ops.create_text_encoder("sentencepiece",
+      #                                                  "ckpt/pegasus_ckpt/c4.unigram.newline.10pct.96000.model")
 
       # Create id arrays
-      target_ids = outputs["targets"].eval(session=tf.compat.v1.Session())
+      # target_ids = outputs["targets"].eval(session=tf.compat.v1.Session())
       # pred_ids = tf.make_ndarray(y)  # takes the one_hot labels tensor, and converts to np.array
       # decode_pred_text = text_eval.ids2str(encoder, pred_ids, None)
       # decode_target_text = text_eval.ids2str(encoder, target_ids, None)
