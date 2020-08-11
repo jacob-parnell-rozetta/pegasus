@@ -153,16 +153,13 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # y = tf.distributions.Categorical(outputs["logits"], dtype=tf.int64)
 
       # Alternative:
-      u = tf.random_uniform(shape=outputs["targets"].get_shape().as_list(), minval=0, maxval=1,
-                            dtype=tf.float32)
-
-      # Need u to have shape BxTxV to add to logp, repeat it by vocab size
-      new_u = tf.reshape(tf.repeat(u, repeats=[96103], axis=0), outputs["logits"].get_shape(
-      ).as_list())
+      # Sample the uniform distribution, produce tensor of same shape as one hot targets (BxTxV)
+      u = tf.random_uniform(shape=outputs["one_hot_targets"].get_shape().as_list(), minval=0,
+                            maxval=1, dtype=tf.float32)
 
       # Normalise logits to log-prob, and compute Gumbel samples with location
       logp = tf.log(tf.math.softmax(outputs["logits"]))
-      z = tf.math.add(-tf.log(-tf.log(new_u)), logp)
+      z = tf.math.add(-tf.log(-tf.log(u)), logp)
 
       # Compute the 'soft' labels of the Gumbel samples, and compute their one-hot labels
       y_soft = tf.math.softmax(tf.div(z, 0.1))
@@ -173,23 +170,26 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       encoder = public_parsing_ops.create_text_encoder("sentencepiece",
                                                        "ckpt/pegasus_ckpt/c4.unigram.newline.10pct.96000.model")
 
-      # Create id arrays - can't be done eagerly
-      # target_ids = outputs["targets"].eval(session=tf.compat.v1.Session())
-      # pred_ids = tf.make_ndarray(y)  # takes the one_hot labels tensor, and converts to np.array
-      # decode_pred_text = text_eval.ids2str(encoder, pred_ids, None)
+      # Create id arrays - need TF2.0 to do tf.make_ndarray(), else?
+      # target_proto_tensor = tf.make_tensor_proto(outputs["targets"])
+      # target_ids = tf.make_ndarray(target_proto_tensor)
       # decode_target_text = text_eval.ids2str(encoder, target_ids, None)
+
+      # preds_proto_tensor = tf.make_tensor_proto(sample_y)
+      # preds_ids = tf.make_ndarray(preds_proto_tensor)
+      # decode_preds_text = text_eval.ids2str(encoder, preds_ids, None)
 
       # from rouge_score import rouge_scorer
       # scorer = rouge_scorer.RougeScorer(["rouge1", "rouge2", "rougeL"], use_stemmer=True)
       # r_score = scorer.score(decode_target_text, decode_pred_text)
+
+      # Subset the F1-measures only (R1, R2, RL)
       # r_score_f1 = {el:0 for el in list(r_score.keys())}  # set empty rouge dict
       # r_score_f1.update({'rouge1':list(r_score['rouge1'])[2], 'rouge2':list(r_score['rouge2'])[
       # 2], 'rougeL':list(r_score['rougeL'])[2]})
-      # Output all ROUGE scores - will want to implement one/all of these w/ F1-measure
 
       # Implement REINFORCE loss
-      # reinforce_loss = ROUGE-F1 * logp
-      # combined_loss = tf.math.add(loss, reinforce_loss)
+      # reinforce_loss = tf.math.mul(ROUGE-F1, logp)
 
       # Implement RELAX loss
 

@@ -127,8 +127,14 @@ class TransformerEncoderDecoderModel(base.BaseModel):
     # If you want to use the original loss
     loss = loss_1
 
+    # Clone the targets tensor and remove from graph for eval?
+    targets2 = tf.stop_gradient(tf.identity(targets_BxT))
+    # want the one hot targets for sampling
+    one_hot_targets = tf.one_hot(targets_BxT, self._vocab_size)
+
     # return loss, {"loss_1": loss_1, "loss_2": loss_2, "logits": logits_BxTxV}
-    return loss, {"logits": logits_BxTxV, "targets": targets_BxT}
+    return loss, {"logits": logits_BxTxV, "targets": targets_BxT, "targets2": targets2,
+                  "one_hot_targets": one_hot_targets}
 
   def predict(self, features, max_decode_len, beam_size, **beam_kwargs):
     """Predict."""
