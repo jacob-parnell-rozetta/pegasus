@@ -181,7 +181,7 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
 
       # from rouge_score import rouge_scorer
       # scorer = rouge_scorer.RougeScorer(["rouge1", "rouge2", "rougeL"], use_stemmer=True)
-      # r_score = scorer.score(decode_target_text, decode_pred_text)
+      # r_score = scorer.score(decode_target_text, decode_preds_text)
 
       # Subset the F1-measures only (R1, R2, RL)
       # r_score_f1 = {el:0 for el in list(r_score.keys())}  # set empty rouge dict
