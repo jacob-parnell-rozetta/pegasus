@@ -19,7 +19,7 @@ import re
 
 from absl import logging
 from pegasus.ops import public_parsing_ops
-from pegasus.eval import text_eval
+from rouge_score import rouge_scorer
 from tensor2tensor.utils import adafactor
 import tensorflow as tf
 
@@ -167,20 +167,16 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
 
       # Calculate ROUGE
       # Convert IDs to predictions using vocab
-      encoder = public_parsing_ops.create_text_encoder("sentencepiece",
-                                                       "ckpt/pegasus_ckpt/c4.unigram.newline.10pct.96000.model")
+      decode_target_text_tensor = public_parsing_ops.decode(outputs["targets"],
+                                                            model_params.vocab_filename,
+                                                            model_params.encoder_type)
+      decode_target_text = decode_target_text_tensor[0]  # returned tensor in bytes format
 
-      # Create id arrays - need TF2.0 to do tf.make_ndarray(), else?
-      # target_proto_tensor = tf.make_tensor_proto(outputs["targets"])
-      # target_ids = tf.make_ndarray(target_proto_tensor)
-      # decode_target_text = text_eval.ids2str(encoder, target_ids, None)
+      decode_preds_text_tensor = public_parsing_ops.decode(sample_y, model_params.vocab_filename,
+                                                           model_params.encoder_type)
+      decode_preds_text = decode_preds_text_tensor[0]  # returned tensor in bytes format
 
-      # preds_proto_tensor = tf.make_tensor_proto(sample_y)
-      # preds_ids = tf.make_ndarray(preds_proto_tensor)
-      # decode_preds_text = text_eval.ids2str(encoder, preds_ids, None)
-
-      # from rouge_score import rouge_scorer
-      # scorer = rouge_scorer.RougeScorer(["rouge1", "rouge2", "rougeL"], use_stemmer=True)
+      scorer = rouge_scorer.RougeScorer(["rouge1", "rouge2", "rougeL"], use_stemmer=True)
       # r_score = scorer.score(decode_target_text, decode_preds_text)
 
       # Subset the F1-measures only (R1, R2, RL)
@@ -189,6 +185,7 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # 2], 'rougeL':list(r_score['rougeL'])[2]})
 
       # Implement REINFORCE loss
+      # rouge_1_f1 = r_score_f1["rouge1"]
       # reinforce_loss = tf.math.mul(ROUGE-F1, logp)
 
       # Implement RELAX loss
@@ -201,8 +198,8 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # train_op = optimizer.minimize(loss, global_step=global_step)
 
       tf.logging.set_verbosity(tf.logging.INFO)
-      logging_hook = tf.train.LoggingTensorHook({"loss": loss, "sampled_y": sample_y, "targets":
-          outputs["targets"]}, every_n_iter=5)
+      logging_hook = tf.train.LoggingTensorHook({"loss": loss, "target_text": decode_target_text,
+                                                 "preds_text": decode_preds_text}, every_n_iter=5)
 
       # This is the configured estimator function that is returned to train the model
       return tpu_estimator.TPUEstimatorSpec(
