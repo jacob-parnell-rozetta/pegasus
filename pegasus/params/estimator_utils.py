@@ -19,7 +19,7 @@ import re
 
 from absl import logging
 from pegasus.ops import public_parsing_ops
-from pegasus.eval.rouge_tensors import evaluate
+from pegasus.eval.rouge_tensors import evaluate_r1, evaluate_r2, evaluate_rl
 from tensor2tensor.utils import adafactor
 import tensorflow as tf
 
@@ -181,11 +181,12 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       decode_preds_text = tf.stop_gradient(decode_preds_text)
 
       # calculate ROUGE through py_function -> evaluates tensor and decodes string
-      # if we want to select a rouge metric, we have to manipulate in rouge_tensors.py
-      r_score = tf.py_function(evaluate, (decode_target_text, decode_preds_text), tf.float32)
+      # select one of three below
+      r1_score = tf.py_function(evaluate_r1, (decode_target_text, decode_preds_text), tf.float32)
+      # r2_score = tf.py_function(evaluate_r2, (decode_target_text, decode_preds_text), tf.float32)
+      # rl_score = tf.py_function(evaluate_rl, (decode_target_text, decode_preds_text), tf.float32)
 
       # Implement REINFORCE loss
-      # rouge_1_f1 = r_score_f1["rouge1"]
       # reinforce_loss = tf.matmul(r_score_f1, logp)
 
       # Implement RELAX loss
@@ -200,7 +201,7 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       tf.logging.set_verbosity(tf.logging.INFO)
       logging_hook = tf.train.LoggingTensorHook({"loss": loss, "target_text": decode_target_text,
                                                  "preds_text": decode_preds_text, "rouge_score":
-                                                     r_score}, every_n_iter=5)
+                                                     r1_score}, every_n_iter=5)
 
       # This is the configured estimator function that is returned to train the model
       return tpu_estimator.TPUEstimatorSpec(
