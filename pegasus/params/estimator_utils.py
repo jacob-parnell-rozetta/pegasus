@@ -19,7 +19,7 @@ import re
 
 from absl import logging
 from pegasus.ops import public_parsing_ops
-from rouge_score import rouge_scorer
+from pegasus.eval.rouge_tensors import evaluate
 from tensor2tensor.utils import adafactor
 import tensorflow as tf
 
@@ -176,17 +176,17 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
                                                            model_params.encoder_type)
       decode_preds_text = decode_preds_text_tensor[0]  # returned tensor in bytes format
 
-      scorer = rouge_scorer.RougeScorer(["rouge1", "rouge2", "rougeL"], use_stemmer=True)
-      # r_score = scorer.score(decode_target_text, decode_preds_text)
+      # do not want to propagate the gradient through the ROUGE hook
+      decode_target_text = tf.stop_gradient(decode_target_text)
+      decode_preds_text = tf.stop_gradient(decode_preds_text)
 
-      # Subset the F1-measures only (R1, R2, RL)
-      # r_score_f1 = {el:0 for el in list(r_score.keys())}  # set empty rouge dict
-      # r_score_f1.update({'rouge1':list(r_score['rouge1'])[2], 'rouge2':list(r_score['rouge2'])[
-      # 2], 'rougeL':list(r_score['rougeL'])[2]})
+      # calculate ROUGE through py_function -> evaluates tensor and decodes string
+      # if we want to select a rouge metric, we have to manipulate in rouge_tensors.py
+      r_score = tf.py_function(evaluate, (decode_target_text, decode_preds_text), tf.float32)
 
       # Implement REINFORCE loss
       # rouge_1_f1 = r_score_f1["rouge1"]
-      # reinforce_loss = tf.math.mul(ROUGE-F1, logp)
+      # reinforce_loss = tf.matmul(r_score_f1, logp)
 
       # Implement RELAX loss
 
@@ -199,7 +199,8 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
 
       tf.logging.set_verbosity(tf.logging.INFO)
       logging_hook = tf.train.LoggingTensorHook({"loss": loss, "target_text": decode_target_text,
-                                                 "preds_text": decode_preds_text}, every_n_iter=5)
+                                                 "preds_text": decode_preds_text, "rouge_score":
+                                                     r_score}, every_n_iter=5)
 
       # This is the configured estimator function that is returned to train the model
       return tpu_estimator.TPUEstimatorSpec(
