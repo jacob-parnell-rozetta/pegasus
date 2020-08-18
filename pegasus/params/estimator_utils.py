@@ -18,6 +18,7 @@ import collections
 import re
 
 from absl import logging
+import numpy as np
 from pegasus.ops import public_parsing_ops
 from pegasus.eval.rouge_tensors import evaluate_r1, evaluate_r2, evaluate_rl
 from tensor2tensor.utils import adafactor
@@ -149,10 +150,6 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
         optimizer = tpu_optimizer.CrossShardOptimizer(optimizer)
 
       # REINFORCE
-      # Sampling the logits as simple as: ** ERROR - list of tensors**
-      # y = tf.distributions.Categorical(outputs["logits"], dtype=tf.int64)
-
-      # Alternative:
       # Sample the uniform distribution, produce tensor of same shape as one hot targets (BxTxV)
       u = tf.random_uniform(shape=outputs["one_hot_targets"].get_shape().as_list(), minval=0,
                             maxval=1, dtype=tf.float32)
@@ -187,21 +184,38 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # rl_score = tf.py_function(evaluate_rl, (decode_target_text, decode_preds_text), tf.float32)
 
       # Implement REINFORCE loss
-      # reinforce_loss = tf.matmul(r_score_f1, logp)
+      # Create index tensors to stack
+      sample_y = tf.reshape(sample_y, [sample_y.get_shape().as_list()[1]])  # reshapes to (seq_len,)
+      sequence_index = tf.constant(np.arange(0, 32))  # DYNAMIC: seq_len, not 32
+      batch_index = tf.constant(np.zeros(sequence_index.get_shape().as_list()[0]), dtype=tf.int64)
+
+      index_tensor = tf.stack([batch_index, sequence_index, sample_y], axis=1)
+      new_logp = tf.gather_nd(logp, index_tensor)  # indexes logp with sample_y indexes
+
+      # Calculate new loss
+      # weight the logp by ROUGE score, sum values, and invert sign
+      reinforce_loss = -tf.reduce_sum(tf.multiply(r1_score, new_logp))
 
       # Implement RELAX loss
 
       # Accessing the gradient of loss
-      list_of_gradient_variable_pairs = optimizer.compute_gradients(loss)
+      list_of_gradient_variable_pairs = optimizer.compute_gradients(reinforce_loss)
       train_op = optimizer.apply_gradients(list_of_gradient_variable_pairs,
                                            global_step=global_step)
 
       # train_op = optimizer.minimize(loss, global_step=global_step)
 
       tf.logging.set_verbosity(tf.logging.INFO)
-      logging_hook = tf.train.LoggingTensorHook({"loss": loss, "target_text": decode_target_text,
-                                                 "preds_text": decode_preds_text, "rouge_score":
-                                                     r1_score}, every_n_iter=5)
+      logging_hook = tf.train.LoggingTensorHook({"loss": loss,
+                                                 "target_ids": outputs["targets"],
+                                                 "pred_ids": sample_y,
+                                                 "target_text": decode_target_text,
+                                                 "preds_text": decode_preds_text,
+                                                 "rouge_score": r1_score,
+                                                 "reinforce_loss": reinforce_loss,
+                                                 "new_logp": new_logp,
+                                                 "sample_y": sample_y
+                                                 }, every_n_iter=5)
 
       # This is the configured estimator function that is returned to train the model
       return tpu_estimator.TPUEstimatorSpec(
