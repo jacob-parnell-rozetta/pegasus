@@ -193,8 +193,8 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       new_logp = tf.gather_nd(logp, index_tensor)  # indexes logp with sample_y indexes
 
       # Calculate new loss
-      # weight the logp by ROUGE score, sum values, and invert sign
-      reinforce_loss = -tf.reduce_sum(tf.multiply(r1_score, new_logp))
+      # weight the logp by ROUGE score, sum values, and invert sign (of logp)
+      reinforce_loss = tf.reduce_sum(tf.multiply(r1_score, -new_logp))
 
       # Implement RELAX loss
 
