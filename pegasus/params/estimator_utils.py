@@ -205,9 +205,6 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # weight the logp by ROUGE score, sum values, and invert sign (of logp)
       # reinforce_loss = tf.reduce_sum(tf.multiply(r1_score, -soft_logp))
       reinforce_loss = tf.reduce_sum(tf.multiply(r1_score, -hardmax_logp))
-      # For TPU estimator return statement below
-      if reinforce_loss:
-          loss = reinforce_loss
 
       # Inigo REINFORCE
       # sum the logp and div by number of tokens in target sent - see trunc_sample_y above
@@ -244,7 +241,7 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # This is the configured estimator function that is returned to train the model
       return tpu_estimator.TPUEstimatorSpec(
           mode=mode,
-          loss=loss,
+          loss=reinforce_loss,  # change loss here
           train_op=train_op,
           training_hooks=[logging_hook],
           scaffold_fn=_load_vars_from_checkpoint(use_tpu,
