@@ -129,10 +129,6 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
     # Tile all scalars to 1 dimension vector.
     outputs = _tile_scalar_to_batch_size(outputs, model_params.batch_size)
 
-    # Will this add to the logging?
-    logging.info("*** LOSS: {} ***".format(loss))
-    logging.info("*** LOGITS: {} ***".format(outputs["logits"]))
-
     if mode == tf.estimator.ModeKeys.TRAIN:
       init_lr = model_params.learning_rate
       global_step = tf.train.get_global_step()
@@ -151,8 +147,8 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
 
       # REINFORCE
       # Sample the uniform distribution, produce tensor of same shape as one hot targets (BxTxV)
-      u = tf.random_uniform(shape=outputs["one_hot_targets"].get_shape().as_list(), minval=0,
-                            maxval=1, dtype=tf.float32)
+      # u = tf.random_uniform(shape=outputs["one_hot_targets"].get_shape().as_list(), minval=0,
+      #                       maxval=1, dtype=tf.float32)
 
       # Normalise logits to log-prob, and compute Gumbel samples with location
       logit_probs = tf.math.softmax(outputs["logits"])  # should not be x <= 0
@@ -229,7 +225,7 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
                                                  "preds_text": decode_preds_text,
                                                  "rouge_score": r1_score,
                                                  "reinforce_loss": reinforce_loss,
-                                                 "soft_logp": soft_logp,
+                                                 # "soft_logp": soft_logp,
                                                  "hard_logp": tf.math.argmax(logp, axis=2),
                                                  "logp_nan": tf.debugging.check_numerics(logp,
                                                                                          "DEBUG ERROR: logp")
