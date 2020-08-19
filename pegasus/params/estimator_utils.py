@@ -192,17 +192,16 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # Create index tensors to stack
       # sample_y_new = tf.reshape(sample_y, [sample_y.get_shape().as_list()[1]])  # reshapes to (
       # seq_len,)
-      argmax_logp_new = tf.reshape(argmax_logp, [argmax_logp.get_shape().as_list()[1]])
-      sequence_index = tf.constant(np.arange(0, 32))  # DYNAMIC: seq_len, not 32
-      batch_index = tf.constant(np.zeros(sequence_index.get_shape().as_list()[0]), dtype=tf.int64)
+      # sequence_index = tf.constant(np.arange(0, 32))  # DYNAMIC: seq_len, not 32
+      # batch_index = tf.constant(np.zeros(sequence_index.get_shape().as_list()[0]), dtype=tf.int64)
 
       # index_tensor = tf.stack([batch_index, sequence_index, sample_y_new], axis=1)
-      index_tensor = tf.stack([batch_index, sequence_index, argmax_logp_new], axis=1)
-      soft_logp = tf.gather_nd(logp, index_tensor)  # indexes logp with sample_y indexes
+      # soft_logp = tf.gather_nd(logp, index_tensor)  # indexes logp with sample_y indexes
 
       # Calculate new loss
       # weight the logp by ROUGE score, sum values, and invert sign (of logp)
-      reinforce_loss = tf.reduce_sum(tf.multiply(r1_score, -soft_logp))
+      # reinforce_loss = tf.reduce_sum(tf.multiply(r1_score, -soft_logp))
+      reinforce_loss = tf.reduce_sum(tf.multiply(r1_score, -argmax_logp))
 
       # Inigo REINFORCE
       # sum the logp and div by number of tokens in target sent - see trunc_sample_y above
