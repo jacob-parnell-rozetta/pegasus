@@ -169,6 +169,9 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
                                                             model_params.encoder_type)
       decode_target_text = decode_target_text_tensor[0]  # returned tensor in bytes format
 
+      # To truncate the prediction text before decoding - may be needed for REINFORCE (Inigo)
+      # trunc_sample_y_index = tf.where(sample_y)
+      # trunc_sample_y = tf.gather_nd(sample_y, trunc_sample_y_index)
       decode_preds_text_tensor = public_parsing_ops.decode(sample_y, model_params.vocab_filename,
                                                            model_params.encoder_type)
       decode_preds_text = decode_preds_text_tensor[0]  # returned tensor in bytes format
@@ -185,18 +188,30 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
 
       # Implement REINFORCE loss
       # Create index tensors to stack
-      sample_y = tf.reshape(sample_y, [sample_y.get_shape().as_list()[1]])  # reshapes to (seq_len,)
+      sample_y_new = tf.reshape(sample_y, [sample_y.get_shape().as_list()[1]])  # reshapes to (
+      # seq_len,)
       sequence_index = tf.constant(np.arange(0, 32))  # DYNAMIC: seq_len, not 32
       batch_index = tf.constant(np.zeros(sequence_index.get_shape().as_list()[0]), dtype=tf.int64)
 
-      index_tensor = tf.stack([batch_index, sequence_index, sample_y], axis=1)
-      new_logp = tf.gather_nd(logp, index_tensor)  # indexes logp with sample_y indexes
+      index_tensor = tf.stack([batch_index, sequence_index, sample_y_new], axis=1)
+      soft_logp = tf.gather_nd(logp, index_tensor)  # indexes logp with sample_y indexes
 
       # Calculate new loss
       # weight the logp by ROUGE score, sum values, and invert sign (of logp)
-      reinforce_loss = tf.reduce_sum(tf.multiply(r1_score, -new_logp))
+      reinforce_loss = tf.reduce_sum(tf.multiply(r1_score, -soft_logp))
+
+      # Inigo REINFORCE
+      # sum the logp and div by number of tokens in target sent - see trunc_sample_y above
+      # sum_logp = tf.math.exp(tf.div(tf.reduce_sum(soft_logp), 32))  # change 32 to target len
+      # reinforce_loss = tf.multiply(r1_score, -sum_logp)
 
       # Implement RELAX loss
+
+      # Debugging steps
+      # tf.debugging.check_numerics(sum_logp, "DEBUG: sum_logp has a NaN")
+      tf.debugging.check_numerics(soft_logp, "DEBUG: new_logp has a NaN")
+      tf.debugging.check_numerics(logp, "DEBUG: logp has a NaN")
+      tf.debugging.check_numerics(r1_score, "DEBUG: ROUGE score has a NaN")
 
       # Accessing the gradient of loss
       list_of_gradient_variable_pairs = optimizer.compute_gradients(reinforce_loss)
@@ -207,15 +222,17 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
 
       tf.logging.set_verbosity(tf.logging.INFO)
       logging_hook = tf.train.LoggingTensorHook({"loss": loss,
+                                                 "logits": outputs["logits"],
                                                  "target_ids": outputs["targets"],
                                                  "pred_ids": sample_y,
                                                  "target_text": decode_target_text,
                                                  "preds_text": decode_preds_text,
                                                  "rouge_score": r1_score,
                                                  "reinforce_loss": reinforce_loss,
-                                                 "new_logp": new_logp,
-                                                 "sample_y": sample_y
-                                                 }, every_n_iter=5)
+                                                 "soft_logp": soft_logp,
+                                                 "hard_logp": tf.math.argmax(logp, axis=2),
+                                                 "sample_y_new": sample_y_new
+                                                 }, every_n_iter=1)
 
       # This is the configured estimator function that is returned to train the model
       return tpu_estimator.TPUEstimatorSpec(
