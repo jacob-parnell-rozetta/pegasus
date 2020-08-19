@@ -198,6 +198,9 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # soft_logp = tf.gather_nd(logp, index_tensor)  # finds log probs using soft indexing
       hardmax_logp = tf.gather_nd(logp, index_tensor)  # finds log probs using hard indexing
 
+      sum_hardmax_probs = tf.reduce_sum(tf.gather_nd(logit_probs, index_tensor))  # sum hard logp
+      # sum_softmax_probs = tf.reduce_sum(tf.gather_nd(logit_probs, index_tensor))  # sum soft logp
+
       # Calculate new loss
       # weight the logp by ROUGE score, sum values, and invert sign (of logp)
       # reinforce_loss = tf.reduce_sum(tf.multiply(r1_score, -soft_logp))
@@ -232,7 +235,8 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
                                                  "preds_text": decode_preds_text,
                                                  "rouge_score": r1_score,
                                                  "hard_logp": hardmax_logp,
-                                                 # "soft_logp": soft_logp
+                                                 # "soft_logp": soft_logp,
+                                                 "sum_logp": sum_hardmax_probs,
                                                  "logp_nan": tf.debugging.check_numerics(logp,
                                                                                          "DEBUG ERROR: logp")
                                                  }, every_n_iter=1)
