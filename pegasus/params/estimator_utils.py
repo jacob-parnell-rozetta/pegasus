@@ -155,14 +155,16 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
                             maxval=1, dtype=tf.float32)
 
       # Normalise logits to log-prob, and compute Gumbel samples with location
-      logp = tf.log(tf.math.softmax(outputs["logits"]))
-      z = tf.math.add(-tf.log(-tf.log(u)), logp)
+      logit_probs = tf.math.softmax(outputs["logits"])  # should not be x <= 0
+      logp = tf.log(logit_probs)
+      argmax_logp = tf.math.argmax(logp, axis=2)
+      # z = tf.math.add(-tf.log(-tf.log(u)), logp)
 
       # Compute the 'soft' labels of the Gumbel samples, and compute their one-hot labels
-      y_soft = tf.math.softmax(tf.div(z, 0.1))
-      sample_y = tf.math.argmax(y_soft, axis=2)  # argmax along the vocab dimension
+      # y_soft = tf.math.softmax(tf.div(z, 0.1))
+      # sample_y = tf.math.argmax(y_soft, axis=2)  # argmax along the vocab dimension
 
-      # Calculate ROUGE
+      # Calculate ROUGE - switching to argmax rather than softmax
       # Convert IDs to predictions using vocab
       decode_target_text_tensor = public_parsing_ops.decode(outputs["targets"],
                                                             model_params.vocab_filename,
@@ -172,7 +174,7 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # To truncate the prediction text before decoding - may be needed for REINFORCE (Inigo)
       # trunc_sample_y_index = tf.where(sample_y)
       # trunc_sample_y = tf.gather_nd(sample_y, trunc_sample_y_index)
-      decode_preds_text_tensor = public_parsing_ops.decode(sample_y, model_params.vocab_filename,
+      decode_preds_text_tensor = public_parsing_ops.decode(argmax_logp, model_params.vocab_filename,
                                                            model_params.encoder_type)
       decode_preds_text = decode_preds_text_tensor[0]  # returned tensor in bytes format
 
@@ -188,12 +190,14 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
 
       # Implement REINFORCE loss
       # Create index tensors to stack
-      sample_y_new = tf.reshape(sample_y, [sample_y.get_shape().as_list()[1]])  # reshapes to (
+      # sample_y_new = tf.reshape(sample_y, [sample_y.get_shape().as_list()[1]])  # reshapes to (
       # seq_len,)
+      argmax_logp_new = tf.reshape(argmax_logp, [argmax_logp.get_shape().as_list()[1]])
       sequence_index = tf.constant(np.arange(0, 32))  # DYNAMIC: seq_len, not 32
       batch_index = tf.constant(np.zeros(sequence_index.get_shape().as_list()[0]), dtype=tf.int64)
 
-      index_tensor = tf.stack([batch_index, sequence_index, sample_y_new], axis=1)
+      # index_tensor = tf.stack([batch_index, sequence_index, sample_y_new], axis=1)
+      index_tensor = tf.stack([batch_index, sequence_index, argmax_logp_new], axis=1)
       soft_logp = tf.gather_nd(logp, index_tensor)  # indexes logp with sample_y indexes
 
       # Calculate new loss
@@ -207,12 +211,6 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
 
       # Implement RELAX loss
 
-      # Debugging steps
-      # tf.debugging.check_numerics(sum_logp, "DEBUG: sum_logp has a NaN")
-      tf.debugging.check_numerics(soft_logp, "DEBUG: new_logp has a NaN")
-      tf.debugging.check_numerics(logp, "DEBUG: logp has a NaN")
-      tf.debugging.check_numerics(r1_score, "DEBUG: ROUGE score has a NaN")
-
       # Accessing the gradient of loss
       list_of_gradient_variable_pairs = optimizer.compute_gradients(reinforce_loss)
       train_op = optimizer.apply_gradients(list_of_gradient_variable_pairs,
@@ -221,17 +219,21 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # train_op = optimizer.minimize(loss, global_step=global_step)
 
       tf.logging.set_verbosity(tf.logging.INFO)
+      # Debugging steps - add into logging hook directly if needed
+      # tf.debugging.check_numerics(sum_logp, "DEBUG: sum_logp has a NaN")
+
       logging_hook = tf.train.LoggingTensorHook({"loss": loss,
                                                  "logits": outputs["logits"],
                                                  "target_ids": outputs["targets"],
-                                                 "pred_ids": sample_y,
+                                                 "pred_ids": argmax_logp,  # or sample_y (RELAX)
                                                  "target_text": decode_target_text,
                                                  "preds_text": decode_preds_text,
                                                  "rouge_score": r1_score,
                                                  "reinforce_loss": reinforce_loss,
                                                  "soft_logp": soft_logp,
                                                  "hard_logp": tf.math.argmax(logp, axis=2),
-                                                 "sample_y_new": sample_y_new
+                                                 "logp_nan": tf.debugging.check_numerics(logp,
+                                                                                         "DEBUG ERROR: logp")
                                                  }, every_n_iter=1)
 
       # This is the configured estimator function that is returned to train the model
