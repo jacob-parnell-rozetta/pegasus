@@ -153,7 +153,8 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
 
       # Normalise logits to log-prob, and compute Gumbel samples with location
       logit_probs = tf.math.softmax(outputs["logits"])  # should not be x <= 0
-      logp = tf.log(logit_probs)  # Inf is returned here, must be passed positive vals!
+      clipped_logit_probs = tf.clip_by_value(logit_probs, 1e-8, 1.0)  # remove 0 values -> 1e-8
+      logp = tf.log(clipped_logit_probs)
       argmax_logp_index = tf.math.argmax(logp, axis=2)  # Returns indexes where logp is max
       # z = tf.math.add(-tf.log(-tf.log(u)), logp)
 
@@ -198,9 +199,6 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # soft_logp = tf.gather_nd(logp, index_tensor)  # finds log probs using soft indexing
       hardmax_logp = tf.gather_nd(logp, index_tensor)  # finds log probs using hard indexing
 
-      sum_hardmax_probs = tf.reduce_sum(tf.gather_nd(logit_probs, index_tensor))  # sum hard logp
-      # sum_softmax_probs = tf.reduce_sum(tf.gather_nd(logit_probs, index_tensor))  # sum soft logp
-
       # Calculate new loss
       # weight the logp by ROUGE score, sum values, and invert sign (of logp)
       # reinforce_loss = tf.reduce_sum(tf.multiply(r1_score, -soft_logp))
@@ -224,18 +222,14 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # Debugging steps - add into logging hook directly if needed
       # tf.debugging.check_numerics(sum_logp, "DEBUG: sum_logp has a NaN")
 
-      logging_hook = tf.train.LoggingTensorHook({"loss": loss,
-                                                 "logits": outputs["logits"],
-                                                 "target_ids": outputs["targets"],
-                                                 "pred_ids": argmax_logp_index,  # or sample_y (RELAX)
+      logging_hook = tf.train.LoggingTensorHook({"loss": reinforce_loss,  # or loss
+                                                 # "logits": outputs["logits"],
+                                                 # "target_ids": outputs["targets"],
+                                                 # "pred_ids": argmax_logp_index,  # or sample_y
                                                  "target_text": decode_target_text,
                                                  "preds_text": decode_preds_text,
                                                  "rouge_score": r1_score,
                                                  "hard_logp": hardmax_logp,
-                                                 # "soft_logp": soft_logp,
-                                                 "sum_logp": sum_hardmax_probs,
-                                                 "logp_nan": tf.debugging.check_numerics(logp,
-                                                                                         "DEBUG ERROR: logp")
                                                  }, every_n_iter=1)
 
       # This is the configured estimator function that is returned to train the model
