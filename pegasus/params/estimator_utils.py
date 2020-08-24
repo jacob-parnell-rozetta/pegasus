@@ -204,7 +204,7 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # reinforce_loss = tf.reduce_sum(tf.multiply(r1_score, -soft_logp))
       reinforce_loss = tf.reduce_sum(tf.multiply(r1_score, -hardmax_logp))
       combined_loss = tf.math.add(tf.multiply(tf.constant(0.8, dtype=tf.float32), XENT_loss),
-                                  tf.multiply(tf.constant(0.8, dtype=tf.float32), reinforce_loss))
+                                  tf.multiply(tf.constant(0.2, dtype=tf.float32), reinforce_loss))
 
       # Inigo REINFORCE
       # sum the logp and div by number of tokens in target sent - see trunc_sample_y above
