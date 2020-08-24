@@ -123,8 +123,8 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       with contrib_tpu.bfloat16_scope():
         loss, outputs = model_params.model()(features, training)
     else:
-      # loss, outputs = model_params.model()(features, training)
-      outputs = model_params.model()(features, training)
+      XENT_loss, outputs = model_params.model()(features, training)
+      # outputs = model_params.model()(features, training)
 
     # TPU requires outputs all have batch dimension and doesn't handle scalar.
     # Tile all scalars to 1 dimension vector.
@@ -203,6 +203,8 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # weight the logp by ROUGE score, sum values, and invert sign (of logp)
       # reinforce_loss = tf.reduce_sum(tf.multiply(r1_score, -soft_logp))
       reinforce_loss = tf.reduce_sum(tf.multiply(r1_score, -hardmax_logp))
+      combined_loss = tf.math.add(tf.multiply(tf.constant(0.8, dtype=tf.float32), XENT_loss),
+                                  tf.multiply(tf.constant(0.8, dtype=tf.float32), reinforce_loss))
 
       # Inigo REINFORCE
       # sum the logp and div by number of tokens in target sent - see trunc_sample_y above
@@ -212,7 +214,7 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # Implement RELAX loss
 
       # Accessing the gradient of loss
-      list_of_gradient_variable_pairs = optimizer.compute_gradients(reinforce_loss)
+      list_of_gradient_variable_pairs = optimizer.compute_gradients(combined_loss)
       train_op = optimizer.apply_gradients(list_of_gradient_variable_pairs,
                                            global_step=global_step)
 
@@ -222,20 +224,18 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # Debugging steps - add into logging hook directly if needed
       # tf.debugging.check_numerics(sum_logp, "DEBUG: sum_logp has a NaN")
 
-      logging_hook = tf.train.LoggingTensorHook({"loss": reinforce_loss,  # or loss
-                                                 # "logits": outputs["logits"],
-                                                 # "target_ids": outputs["targets"],
-                                                 # "pred_ids": argmax_logp_index,  # or sample_y
+      logging_hook = tf.train.LoggingTensorHook({"loss": combined_loss,  # or loss
+                                                 "reinforce_loss": reinforce_loss,
+                                                 "XENT_loss": XENT_loss,
                                                  "target_text": decode_target_text,
                                                  "preds_text": decode_preds_text,
                                                  "rouge_score": r1_score,
-                                                 "hard_logp": hardmax_logp,
                                                  }, every_n_iter=1)
 
       # This is the configured estimator function that is returned to train the model
       return tpu_estimator.TPUEstimatorSpec(
           mode=mode,
-          loss=reinforce_loss,  # change loss here
+          loss=combined_loss,  # change loss here
           train_op=train_op,
           training_hooks=[logging_hook],
           scaffold_fn=_load_vars_from_checkpoint(use_tpu,
