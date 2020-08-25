@@ -148,16 +148,20 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
 
       # REINFORCE
       # Normalise logits to log-prob, and compute Gumbel samples with location
-      logit_probs = tf.math.softmax(outputs["logits"])  # should not be x <= 0
-      clipped_logit_probs = tf.clip_by_value(logit_probs, 1e-8, 1.0)  # remove 0 values -> 1e-8
-      logp = tf.log(clipped_logit_probs)
+      hard_logit_probs = tf.math.softmax(outputs["logits"])  # should not be x <= 0
+      hard_clipped_logit_probs = tf.clip_by_value(hard_logit_probs, 1e-8, 1.0)
+      hard_logp = tf.log(hard_clipped_logit_probs)
+
+      soft_logit_probs = tf.math.softmax(outputs["logits"])  # should not be x <= 0
+      soft_clipped_logit_probs = tf.clip_by_value(soft_logit_probs, 1e-8, 1.0)
+      soft_logp = tf.log(soft_clipped_logit_probs)
 
       # ARGMAX
-      argmax_logp_index = tf.math.argmax(logp, axis=2)  # Returns indexes where logp is max
+      argmax_logp_index = tf.math.argmax(hard_logp, axis=2)  # Returns indexes where logp is max
       # SOFTMAX - 'soft' labels of the Gumbel samples, and their one-hot labels
       u = tf.random_uniform(shape=outputs["one_hot_targets"].get_shape().as_list(), minval=0,
                             maxval=1, dtype=tf.float32)
-      z = tf.math.add(-tf.log(-tf.log(u)), logp)
+      z = tf.math.add(-tf.log(-tf.log(u)), soft_logp)
       y_soft = tf.math.softmax(tf.div(z, 0.1))
       sample_y = tf.math.argmax(y_soft, axis=2)  # argmax along the vocab dimension
 
@@ -193,7 +197,7 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       batch_index = tf.constant(np.zeros(sequence_index.get_shape().as_list()[0]), dtype=tf.int64)
 
       index_tensor = tf.stack([batch_index, sequence_index, argmax_logp_new], axis=1)
-      hardmax_logp = tf.gather_nd(logp, index_tensor)  # finds log probs using hard indexing
+      hardmax_logp = tf.gather_nd(hard_logp, index_tensor)  # finds log probs using hard indexing
 
       # REINFORCE w/ baseline
       # Implement REINFORCE loss w/ ARGMAX
@@ -209,11 +213,11 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       sample_y_new = tf.reshape(sample_y, [sample_y.get_shape().as_list()[1]])
 
       index_tensor = tf.stack([batch_index, sequence_index, sample_y_new], axis=1)
-      soft_logp = tf.gather_nd(logp, index_tensor)  # finds log probs using hard indexing
+      softmax_logp = tf.gather_nd(soft_logp, index_tensor)  # finds log probs using hard indexing
 
       # Calculate new loss
       # weight the logp by ROUGE score, sum values, and invert sign (of logp)
-      soft_reinforce_loss = tf.reduce_sum(tf.multiply(r1_score_soft, -soft_logp))
+      soft_reinforce_loss = tf.reduce_sum(tf.multiply(r1_score_soft, -softmax_logp))
       hard_reinforce_loss = tf.reduce_sum(tf.multiply(r1_score_hard, -hardmax_logp))
 
       # combined_loss = tf.math.add(tf.multiply(tf.constant(0.8, dtype=tf.float32), XENT_loss),
