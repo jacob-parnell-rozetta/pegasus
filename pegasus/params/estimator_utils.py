@@ -222,7 +222,8 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
 
       # combined_loss = tf.math.add(tf.multiply(tf.constant(0.8, dtype=tf.float32), XENT_loss),
       #                             tf.multiply(tf.constant(0.2, dtype=tf.float32), reinforce_loss))
-      reinforce_baseline = tf.subtract(soft_reinforce_loss, hard_reinforce_loss)
+      # argmax - softmax as argmax seems to be a better predictor
+      reinforce_baseline = tf.subtract(hard_reinforce_loss, soft_reinforce_loss)
 
       # Inigo REINFORCE
       # sum the logp and div by number of tokens in target sent - see trunc_sample_y above
