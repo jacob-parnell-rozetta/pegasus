@@ -183,12 +183,13 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
 
       # Implement REINFORCE loss w/ ARGMAX
       # Create index tensors to stack and get corresponding probabilities from logp
-      argmax_logp_new = tf.reshape(argmax_logp_index, [argmax_logp_index.get_shape().as_list()[1]])
+      # argmax_logp_new = tf.reshape(argmax_logp_index, [argmax_logp_index.get_shape().as_list()[
+      # 1]])
       sequence_index = tf.constant(np.arange(0, 32))  # DYNAMIC: seq_len, not 32
       batch_index = tf.constant(np.zeros(sequence_index.get_shape().as_list()[0]), dtype=tf.int64)
 
-      index_tensor_hard = tf.stack([batch_index, sequence_index, argmax_logp_new], axis=1)
-      argmax_logp = tf.gather_nd(logp, index_tensor_hard)  # finds log probs using hard indexing
+      # index_tensor_hard = tf.stack([batch_index, sequence_index, argmax_logp_new], axis=1)
+      # argmax_logp = tf.gather_nd(logp, index_tensor_hard)  # finds log probs using hard indexing
 
       # Implement REINFORCE loss w/ SOFTMAX
       decode_preds_text_tensor_soft = public_parsing_ops.decode(sample_y,
@@ -206,8 +207,8 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
 
       # New LOSS calculation
       # weight the logp by ROUGE score, sum values, and invert sign (of logp)
-      soft_reinforce_loss = tf.reduce_sum(tf.multiply(r1_score_soft, -softmax_logp))
-      hard_reinforce_loss = tf.reduce_sum(tf.multiply(r1_score_hard, -argmax_logp))
+      # soft_reinforce_loss = tf.reduce_sum(tf.multiply(r1_score_soft, -softmax_logp))
+      # hard_reinforce_loss = tf.reduce_sum(tf.multiply(r1_score_hard, -argmax_logp))
 
       # combined_loss = tf.math.add(tf.multiply(tf.constant(0.8, dtype=tf.float32), XENT_loss),
       #                             tf.multiply(tf.constant(0.2, dtype=tf.float32), reinforce_loss))
@@ -217,6 +218,8 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       reinforce_baseline = tf.reduce_sum(tf.multiply(loss_difference, softmax_logp))
 
       # RELAX loss
+
+      ##########################################################################################
 
       # Accessing the gradient of loss
       list_of_gradient_variable_pairs = optimizer.compute_gradients(reinforce_baseline)
@@ -230,8 +233,8 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # tf.debugging.check_numerics(sum_logp, "DEBUG: sum_logp has a NaN")
 
       logging_hook = tf.train.LoggingTensorHook({"loss": reinforce_baseline,  # or loss
-                                                 "hard_reinforce_loss": hard_reinforce_loss,
-                                                 "soft_reinforce_loss": soft_reinforce_loss,
+                                                 # "hard_reinforce_loss": hard_reinforce_loss,
+                                                 # "soft_reinforce_loss": soft_reinforce_loss,
                                                  "XENT_loss": XENT_loss,
                                                  "target_text": decode_target_text,
                                                  "soft_preds_text": decode_preds_text_soft,
