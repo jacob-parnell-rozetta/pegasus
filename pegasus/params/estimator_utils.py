@@ -212,8 +212,9 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # combined_loss = tf.math.add(tf.multiply(tf.constant(0.8, dtype=tf.float32), XENT_loss),
       #                             tf.multiply(tf.constant(0.2, dtype=tf.float32), reinforce_loss))
 
-      reinforce_baseline = tf.multiply(tf.subtract(r1_score_soft, r1_score_hard),
-                                       tf.reduce_sum(softmax_logp))
+      # Socher (2017) - r(y_hat) - r(y_s) needs to be swapped as we have loss, not reward
+      loss_difference = tf.subtract(r1_score_soft, r1_score_hard)
+      reinforce_baseline = tf.reduce_sum(tf.multiply(loss_difference, softmax_logp))
 
       # RELAX loss
 
