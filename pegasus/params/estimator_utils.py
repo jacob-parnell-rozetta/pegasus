@@ -146,49 +146,40 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       if use_tpu:
         optimizer = tpu_optimizer.CrossShardOptimizer(optimizer)
 
-      # REINFORCE
-      # Normalise logits to log-prob, and compute Gumbel samples with location
-      hard_logit_probs = tf.math.softmax(outputs["logits"])  # should not be x <= 0
-      hard_clipped_logit_probs = tf.clip_by_value(hard_logit_probs, 1e-8, 1.0)
-      hard_logp = tf.log(hard_clipped_logit_probs)
+      ##########################################################################################
 
-      soft_logit_probs = tf.math.softmax(outputs["logits"])  # should not be x <= 0
-      soft_clipped_logit_probs = tf.clip_by_value(soft_logit_probs, 1e-8, 1.0)
-      soft_logp = tf.log(soft_clipped_logit_probs)
+      # Normalise logits to log-prob, and compute Gumbel samples with location
+      logit_probs = tf.math.softmax(outputs["logits"])  # should not be x <= 0
+      clipped_logit_probs = tf.clip_by_value(logit_probs, 1e-8, 1.0)
+      logp = tf.log(clipped_logit_probs)
 
       # ARGMAX
-      argmax_logp_index = tf.math.argmax(hard_logp, axis=2)  # Returns indexes where logp is max
+      argmax_logp_index = tf.math.argmax(logp, axis=2)  # Returns indexes where logp is max
       # SOFTMAX - 'soft' labels of the Gumbel samples, and their one-hot labels
       u = tf.random_uniform(shape=outputs["one_hot_targets"].get_shape().as_list(), minval=0,
                             maxval=1, dtype=tf.float32)
-      z = tf.math.add(-tf.log(-tf.log(u)), soft_logp)
-      y_soft = tf.math.softmax(tf.div(z, 0.1))
+      z = tf.math.add(-tf.log(-tf.log(u)), logp)
+      y_soft = tf.math.softmax(tf.div(z, 0.1))  # tau = 0.1
       sample_y = tf.math.argmax(y_soft, axis=2)  # argmax along the vocab dimension
 
-      # Calculate ROUGE
+      # Decode text for ROUGE
       decode_target_text_tensor = public_parsing_ops.decode(outputs["targets"],
                                                             model_params.vocab_filename,
                                                             model_params.encoder_type)
       decode_target_text = decode_target_text_tensor[0]  # returned tensor in bytes format
 
-      # To truncate the prediction text before decoding - may be needed for REINFORCE (Inigo)
-      # trunc_sample_y_index = tf.where(sample_y)
-      # trunc_sample_y = tf.gather_nd(sample_y, trunc_sample_y_index)
       decode_preds_text_tensor_hard = public_parsing_ops.decode(argmax_logp_index,
-                                                           model_params.vocab_filename,
-                                                           model_params.encoder_type)
+                                                                model_params.vocab_filename,
+                                                                model_params.encoder_type)
       decode_preds_text_hard = decode_preds_text_tensor_hard[0]  # returned tensor in bytes format
 
       # do not want to propagate the gradient through the ROUGE hook
       decode_target_text = tf.stop_gradient(decode_target_text)
       decode_preds_text_hard = tf.stop_gradient(decode_preds_text_hard)
 
-      # calculate ROUGE through py_function -> evaluates tensor and decodes string
-      # select one of three below
+      # calculate ROUGE-1
       r1_score_hard = tf.py_function(evaluate_r1, (decode_target_text, decode_preds_text_hard),
-                                tf.float32)
-      # r2_score = tf.py_function(evaluate_r2, (decode_target_text, decode_preds_text), tf.float32)
-      # rl_score = tf.py_function(evaluate_rl, (decode_target_text, decode_preds_text), tf.float32)
+                                     tf.float32)
 
       # Implement REINFORCE loss w/ ARGMAX
       # Create index tensors to stack and get corresponding probabilities from logp
@@ -196,41 +187,35 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       sequence_index = tf.constant(np.arange(0, 32))  # DYNAMIC: seq_len, not 32
       batch_index = tf.constant(np.zeros(sequence_index.get_shape().as_list()[0]), dtype=tf.int64)
 
-      index_tensor = tf.stack([batch_index, sequence_index, argmax_logp_new], axis=1)
-      hardmax_logp = tf.gather_nd(hard_logp, index_tensor)  # finds log probs using hard indexing
+      index_tensor_hard = tf.stack([batch_index, sequence_index, argmax_logp_new], axis=1)
+      argmax_logp = tf.gather_nd(logp, index_tensor_hard)  # finds log probs using hard indexing
 
-      # REINFORCE w/ baseline
-      # Implement REINFORCE loss w/ ARGMAX
+      # Implement REINFORCE loss w/ SOFTMAX
       decode_preds_text_tensor_soft = public_parsing_ops.decode(sample_y,
-                                                           model_params.vocab_filename,
-                                                           model_params.encoder_type)
+                                                                model_params.vocab_filename,
+                                                                model_params.encoder_type)
       decode_preds_text_soft = decode_preds_text_tensor_soft[0]
       decode_preds_text_soft = tf.stop_gradient(decode_preds_text_soft)
 
       r1_score_soft = tf.py_function(evaluate_r1, (decode_target_text, decode_preds_text_soft),
-                                    tf.float32)
+                                     tf.float32)
 
       sample_y_new = tf.reshape(sample_y, [sample_y.get_shape().as_list()[1]])
+      index_tensor_soft = tf.stack([batch_index, sequence_index, sample_y_new], axis=1)
+      softmax_logp = tf.gather_nd(logp, index_tensor_soft)  # finds log probs using soft indexing
 
-      index_tensor = tf.stack([batch_index, sequence_index, sample_y_new], axis=1)
-      softmax_logp = tf.gather_nd(soft_logp, index_tensor)  # finds log probs using hard indexing
-
-      # Calculate new loss
+      # New LOSS calculation
       # weight the logp by ROUGE score, sum values, and invert sign (of logp)
       soft_reinforce_loss = tf.reduce_sum(tf.multiply(r1_score_soft, -softmax_logp))
-      hard_reinforce_loss = tf.reduce_sum(tf.multiply(r1_score_hard, -hardmax_logp))
+      hard_reinforce_loss = tf.reduce_sum(tf.multiply(r1_score_hard, -argmax_logp))
 
       # combined_loss = tf.math.add(tf.multiply(tf.constant(0.8, dtype=tf.float32), XENT_loss),
       #                             tf.multiply(tf.constant(0.2, dtype=tf.float32), reinforce_loss))
-      # argmax - softmax as argmax seems to be a better predictor
-      reinforce_baseline = tf.subtract(hard_reinforce_loss, soft_reinforce_loss)
 
-      # Inigo REINFORCE
-      # sum the logp and div by number of tokens in target sent - see trunc_sample_y above
-      # sum_logp = tf.math.exp(tf.div(tf.reduce_sum(soft_logp), 32))  # change 32 to target len
-      # reinforce_loss = tf.multiply(r1_score, -sum_logp)
+      reinforce_baseline = tf.multiply(tf.subtract(r1_score_soft, r1_score_hard),
+                                       tf.reduce_sum(softmax_logp))
 
-      # Implement RELAX loss
+      # RELAX loss
 
       # Accessing the gradient of loss
       list_of_gradient_variable_pairs = optimizer.compute_gradients(reinforce_baseline)
@@ -252,7 +237,7 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
                                                  "hard_preds_text": decode_preds_text_hard,
                                                  "hard_rouge_score": r1_score_hard,
                                                  "soft_rouge_score": r1_score_soft
-                                                 }, every_n_iter=1)
+                                                 }, every_n_iter=5)
 
       # This is the configured estimator function that is returned to train the model
       return tpu_estimator.TPUEstimatorSpec(
