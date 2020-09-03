@@ -114,17 +114,33 @@ class TransformerEncoderDecoderModel(base.BaseModel):
         weights=targets_mask_BxT)
 
     # Add FFN for REINFORCE w/ baseline (later RELAX)
-    nn_input = self._embedding_layer(targets_BxT, True)
-    nn_output_size = 1  # a scalar
+    # nn_input = self._embedding_layer(targets_BxT, True)
+    input_size = 512  # max input length
+    hidden1_size = 25  # random
+    nn_output_size = 1  # scalar to subtract from rouge loss
 
-    # INSERT FFN HERE -> OUTPUT SCALAR
+    x = tf.placeholder(tf.float32, [None, input_size], name='data')
+    W1 = tf.Variable(tf.truncated_normal([hidden1_size, input_size], tf.float32,
+                                   name='weights_1st_layer'), stddev=0.1)
+    b1 = tf.Variable(tf.truncated_normal([hidden1_size], tf.float32), name='bias_layer_1')
+
+    W2 = tf.Variable(tf.truncated_normal([nn_output_size, hidden1_size], tf.float32,
+                                         name='weights_2nd_layer'), stddev=0.1)
+    b2 = tf.Variable(tf.truncated_normal([nn_output_size], tf.float32), name='bias_layer_2')
+
+    hidden_op = tf.nn.relu(tf.add(tf.matmul(x, W1, transpose_b=True), b1))
+    output_op = tf.matmul(hidden_op, W2, transpose_b=True) + b2
+    pred = tf.nn.softmax(output_op)
+
+    # How do I get this to then run?
+    # with tf.variable_scope?
 
     # want the one hot targets for sampling
     one_hot_targets = tf.one_hot(targets_BxT, self._vocab_size)
 
     # return loss, {"loss_1": loss_1, "loss_2": loss_2, "logits": logits_BxTxV}
     return XENT_loss, {"logits": logits_BxTxV, "targets": targets_BxT, "one_hot_targets":
-        one_hot_targets, "nn_input": nn_input}
+        one_hot_targets, "pred": pred}
 
   def predict(self, features, max_decode_len, beam_size, **beam_kwargs):
     """Predict."""
