@@ -236,15 +236,14 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
 
       logging_hook = tf.train.LoggingTensorHook({"loss": XENT_loss,  # or loss
                                                  "learning_rate": lr,
-                                                 "nn_input": outputs["nn_input"],
                                                  # "hard_reinforce_loss": hard_reinforce_loss,
                                                  # "soft_reinforce_loss": soft_reinforce_loss,
-                                                 "XENT_loss": XENT_loss,
-                                                 "target_text": decode_target_text,
-                                                 "soft_preds_text": decode_preds_text_soft,
-                                                 "hard_preds_text": decode_preds_text_hard,
-                                                 "hard_rouge_score": r1_score_hard,
-                                                 "soft_rouge_score": r1_score_soft
+                                                 # "XENT_loss": XENT_loss,
+                                                 # "target_text": decode_target_text,
+                                                 # "soft_preds_text": decode_preds_text_soft,
+                                                 # "hard_preds_text": decode_preds_text_hard,
+                                                 # "hard_rouge_score": r1_score_hard,
+                                                 # "soft_rouge_score": r1_score_soft
                                                  }, every_n_iter=5)
 
       # This is the configured estimator function that is returned to train the model
