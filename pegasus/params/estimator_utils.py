@@ -211,13 +211,15 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # hard_reinforce_loss = tf.reduce_sum(tf.multiply(r1_score_hard, -argmax_logp))
 
       # Socher (2017)
-      loss_difference = tf.subtract(r1_score_hard, r1_score_soft)
-      reinforce_baseline = tf.reduce_sum(tf.multiply(loss_difference, softmax_logp))
+      # loss_difference = tf.subtract(r1_score_hard, r1_score_soft)
+      # reinforce_baseline = tf.reduce_sum(tf.multiply(loss_difference, softmax_logp))
 
       # combined_loss = tf.math.add(tf.multiply(tf.constant(0.8, dtype=tf.float32), XENT_loss),
       #                             tf.multiply(tf.constant(0.2, dtype=tf.float32), reinforce_loss))
 
       # RELAX loss
+      loss_difference = tf.subtract(r1_score_hard, outputs["nn_output"])
+      reinforce_baseline = tf.reduce_sum(tf.multiply(loss_difference, softmax_logp))
 
       ##########################################################################################
 
@@ -234,6 +236,7 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
 
       logging_hook = tf.train.LoggingTensorHook({"loss": reinforce_baseline,  # or loss
                                                  "learning_rate": lr,
+                                                 "nn_output": outputs["nn_output"],
                                                  # "hard_reinforce_loss": hard_reinforce_loss,
                                                  # "soft_reinforce_loss": soft_reinforce_loss,
                                                  "XENT_loss": XENT_loss,
