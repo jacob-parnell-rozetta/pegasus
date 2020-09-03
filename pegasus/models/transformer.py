@@ -115,69 +115,16 @@ class TransformerEncoderDecoderModel(base.BaseModel):
 
     # Add FFN for REINFORCE w/ baseline (later RELAX)
     nn_input = self._embedding_layer(targets_BxT, True)
-    init_nodes = 5  # how should this change? hidden size?
     nn_output_size = 1  # a scalar
 
-    # weight and bais wrappers
-    def weight_variable(name, shape):
-        """
-        Create a weight variable with appropriate initialization
-        :param name: weight name
-        :param shape: weight shape
-        :return: initialized weight variable
-        """
-        initer = tf.truncated_normal_initializer(stddev=0.01)
-        return tf.get_variable('W_' + name,
-                               dtype=tf.float32,
-                               shape=shape,
-                               initializer=initer)
-
-    def bias_variable(name, shape):
-        """
-        Create a bias variable with appropriate initialization
-        :param name: bias variable name
-        :param shape: bias variable shape
-        :return: initialized bias variable
-        """
-        initial = tf.constant(0., shape=shape, dtype=tf.float32)
-        return tf.get_variable('b_' + name,
-                               dtype=tf.float32,
-                               initializer=initial)
-
-    def fc_layer(x, num_units, name, use_relu=True):
-        """
-        Create a fully-connected layer
-        :param x: input from previous layer
-        :param num_units: number of hidden units in the fully-connected layer
-        :param name: layer name
-        :param use_relu: boolean to add ReLU non-linearity (or not)
-        :return: The output array
-        """
-        in_dim = x.get_shape()[1]
-        W = weight_variable(name, shape=[in_dim, num_units])
-        b = bias_variable(name, [num_units])
-        layer = tf.matmul(x, W)
-        layer += b
-        if use_relu:
-            layer = tf.nn.relu(layer)
-        return layer
-
-    # Create the graph for the linear model
-    # Placeholders for inputs (x) and outputs(y)
-    x = tf.placeholder(tf.float32, shape=[None, tf.shape(nn_input)[1]], name='X')
-    y = tf.placeholder(tf.float32, shape=[None, nn_output_size], name='Y')
-
-    # Create a fully-connected layer with h1 nodes as hidden layer
-    fc1 = fc_layer(x, init_nodes, 'FC1', use_relu=True)
-    # Create a fully-connected layer with n_classes nodes as output layer
-    nn_output = fc_layer(fc1, nn_output_size, 'OUT', use_relu=False)
+    # INSERT FFN HERE -> OUTPUT SCALAR
 
     # want the one hot targets for sampling
     one_hot_targets = tf.one_hot(targets_BxT, self._vocab_size)
 
     # return loss, {"loss_1": loss_1, "loss_2": loss_2, "logits": logits_BxTxV}
     return XENT_loss, {"logits": logits_BxTxV, "targets": targets_BxT, "one_hot_targets":
-        one_hot_targets, "nn_output": nn_output}
+        one_hot_targets, "nn_input": nn_input}
 
   def predict(self, features, max_decode_len, beam_size, **beam_kwargs):
     """Predict."""

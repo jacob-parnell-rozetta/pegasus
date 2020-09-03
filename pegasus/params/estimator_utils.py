@@ -218,13 +218,13 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       #                             tf.multiply(tf.constant(0.2, dtype=tf.float32), reinforce_loss))
 
       # RELAX loss
-      loss_difference = tf.subtract(r1_score_hard, outputs["nn_output"])
-      reinforce_baseline = tf.reduce_sum(tf.multiply(loss_difference, softmax_logp))
+      # loss_difference = tf.subtract(r1_score_hard, outputs["nn_input"])
+      # reinforce_baseline = tf.reduce_sum(tf.multiply(loss_difference, softmax_logp))
 
       ##########################################################################################
 
       # Accessing the gradient of loss
-      list_of_gradient_variable_pairs = optimizer.compute_gradients(reinforce_baseline)
+      list_of_gradient_variable_pairs = optimizer.compute_gradients(XENT_loss)
       train_op = optimizer.apply_gradients(list_of_gradient_variable_pairs,
                                            global_step=global_step)
 
@@ -234,9 +234,9 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # Debugging steps - add into logging hook directly if needed
       # tf.debugging.check_numerics(sum_logp, "DEBUG: sum_logp has a NaN")
 
-      logging_hook = tf.train.LoggingTensorHook({"loss": reinforce_baseline,  # or loss
+      logging_hook = tf.train.LoggingTensorHook({"loss": XENT_loss,  # or loss
                                                  "learning_rate": lr,
-                                                 "nn_output": outputs["nn_output"],
+                                                 "nn_input": outputs["nn_input"],
                                                  # "hard_reinforce_loss": hard_reinforce_loss,
                                                  # "soft_reinforce_loss": soft_reinforce_loss,
                                                  "XENT_loss": XENT_loss,
@@ -250,7 +250,7 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # This is the configured estimator function that is returned to train the model
       return tpu_estimator.TPUEstimatorSpec(
           mode=mode,
-          loss=reinforce_baseline,  # change loss here
+          loss=XENT_loss,  # change loss here
           train_op=train_op,
           training_hooks=[logging_hook],
           scaffold_fn=_load_vars_from_checkpoint(use_tpu,
