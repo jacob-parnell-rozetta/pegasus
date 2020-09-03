@@ -107,7 +107,7 @@ class TransformerEncoderDecoderModel(base.BaseModel):
     logits_BxTxV = self._embedding_layer(states_BxTxD, False)
     targets_mask_BxT = tf.cast(tf.greater(targets_BxT, 0), self._dtype)
 
-    loss_1 = tf.losses.softmax_cross_entropy(
+    XENT_loss = tf.losses.softmax_cross_entropy(
         tf.one_hot(targets_BxT, self._vocab_size),
         logits_BxTxV,
         label_smoothing=self._label_smoothing,
@@ -125,10 +125,14 @@ class TransformerEncoderDecoderModel(base.BaseModel):
     # Add losses to create toy loss
     # loss = tf.math.add(loss_1, loss_2)
     # If you want to use the original loss
-    loss = loss_1
+    # loss = loss_1
+
+    # want the one hot targets for sampling
+    one_hot_targets = tf.one_hot(targets_BxT, self._vocab_size)
 
     # return loss, {"loss_1": loss_1, "loss_2": loss_2, "logits": logits_BxTxV}
-    return loss, {"logits": logits_BxTxV, "targets": targets_BxT}
+    return XENT_loss, {"logits": logits_BxTxV, "targets": targets_BxT, "one_hot_targets":
+        one_hot_targets}
 
   def predict(self, features, max_decode_len, beam_size, **beam_kwargs):
     """Predict."""
