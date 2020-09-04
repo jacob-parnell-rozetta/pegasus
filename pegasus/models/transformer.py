@@ -114,42 +114,33 @@ class TransformerEncoderDecoderModel(base.BaseModel):
         weights=targets_mask_BxT)
 
     # Add FFN for REINFORCE w/ baseline (later RELAX)
-    # nn_input = self._embedding_layer(targets_BxT, True)
-    # ffn_input_size = features["inputs"].get_shape().as_list()[1]  # max input length
-    # ffn_target_size = features["targets"].get_shape().as_list()[1]
-    # hidden1_size = 128  # random
-    # ffn_output_size = 1  # scalar to subtract from rouge loss
+    ffn_input_size = features["inputs"].get_shape().as_list()[1]  # max input length 512
+    ffn_target_size = features["targets"].get_shape().as_list()[1]  # max target length 32
+    hidden1_size = 128
+    ffn_output_size = 1  # scalar value to subtract from rouge loss
+    x = tf.placeholder(tf.float32, [None, ffn_input_size], name='data')
+    y = tf.placeholder(tf.float32, [None, ffn_target_size], name='targets')
+    weights = {"w1": tf.Variable(tf.random_normal([ffn_input_size, hidden1_size]) * 0.01),
+               "w2": tf.Variable(tf.random_normal([hidden1_size, ffn_output_size]) * 0.01)}
+    biases = {"b1": tf.Variable(tf.zeros([hidden1_size])),
+              "b2": tf.Variable(tf.zeros([ffn_output_size]))}
 
-    # x = tf.placeholder(tf.float32, [None, ffn_input_size], name='data')
-    # y = tf.placeholder(tf.float32, [None, ffn_target_size], name='targets')
+    def shallow_network(X, weights, biases):
+        layer_1 = tf.add(tf.matmul(X, weights['w1']), biases['b1'])
+        layer_1 = tf.nn.relu(layer_1)
+        output_layer = tf.add(tf.matmul(layer_1, weights['w2']), biases['b2'])
+        return output_layer
 
-    # weights = {"w1": tf.Variable(tf.random_normal([ffn_input_size, hidden1_size]) * 0.01),
-    #            "w2": tf.Variable(tf.random_normal([hidden1_size, ffn_output_size]) * 0.01)}
-    # biases = {"b1": tf.Variable(tf.zeros([hidden1_size])),
-    #           "b2": tf.Variable(tf.zeros([ffn_output_size]))}
-
-    # def shallowLayerNetwork(X, weights, biases):
-        # First layer
-    #     layer_1 = tf.add(tf.matmul(X, weights['w1']), biases['b1'])
-    #     layer_1 = tf.nn.relu(layer_1)
-
-        # output layer. We need to have a linear output instead of a non-linear output
-    #     output_layer = tf.add(tf.matmul(layer_1, weights['w2']), biases['b2'])
-
-    #     return output_layer
-
-    # predictions = shallowLayerNetwork(x, weights, biases)
-    # baseline_loss = tf.reduce_mean(tf.nn.softmax(predictions))
-
-    # How do I get this to then run?
-    # with tf.variable_scope("control_variate", reuse=tf.AUTO_REUSE):
+    with tf.variable_scope("control_variate", reuse=tf.AUTO_REUSE):
+        ffn_output = shallow_network(features["inputs"], weights, biases)  # inputs as document IDs?
+        ffn_loss = tf.reduce_mean(tf.nn.softmax(ffn_output))
 
     # want the one hot targets for sampling
     one_hot_targets = tf.one_hot(targets_BxT, self._vocab_size)
 
     # return loss, {"loss_1": loss_1, "loss_2": loss_2, "logits": logits_BxTxV}
     return XENT_loss, {"logits": logits_BxTxV, "targets": targets_BxT, "one_hot_targets":
-        one_hot_targets}
+        one_hot_targets, "ffn_loss": ffn_loss}
 
   def predict(self, features, max_decode_len, beam_size, **beam_kwargs):
     """Predict."""
