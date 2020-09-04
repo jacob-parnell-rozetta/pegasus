@@ -113,36 +113,12 @@ class TransformerEncoderDecoderModel(base.BaseModel):
         label_smoothing=self._label_smoothing,
         weights=targets_mask_BxT)
 
-    # Add FFN for REINFORCE w/ baseline (later RELAX)
-    ffn_input_size = features["inputs"].get_shape().as_list()[1]  # max input length 512
-    # ffn_target_size = features["targets"].get_shape().as_list()[1]  # max target length 32
-    hidden1_size = 128
-    ffn_output_size = 1  # scalar value to subtract from rouge loss
-
-    # x = tf.placeholder(tf.float32, [None, ffn_input_size], name='data')
-    # y = tf.placeholder(tf.float32, [None, ffn_target_size], name='targets')
-
-    weights = {"w1": tf.Variable(tf.random_normal([ffn_input_size, hidden1_size]) * 0.01),
-               "w2": tf.Variable(tf.random_normal([hidden1_size, ffn_output_size]) * 0.01)}
-
-    biases = {"b1": tf.Variable(tf.zeros([hidden1_size])),
-              "b2": tf.Variable(tf.zeros([ffn_output_size]))}
-
-    def shallow_network(x_input, w, b):
-        layer_1 = tf.add(tf.matmul(x_input, w['w1']), b['b1'])
-        layer_1 = tf.nn.relu(layer_1)
-        output_layer = tf.add(tf.matmul(layer_1, w['w2']), b['b2'])
-        return output_layer
-
-    with tf.variable_scope("control_variate", reuse=tf.AUTO_REUSE):
-        ffn_output = shallow_network(features["inputs"], weights, biases)  # baseline scorer
-
     # want the one hot targets for sampling
     one_hot_targets = tf.one_hot(targets_BxT, self._vocab_size)
 
     # return loss, {"loss_1": loss_1, "loss_2": loss_2, "logits": logits_BxTxV}
     return XENT_loss, {"logits": logits_BxTxV, "targets": targets_BxT, "one_hot_targets":
-        one_hot_targets, "ffn_output": ffn_output}
+        one_hot_targets}
 
   def predict(self, features, max_decode_len, beam_size, **beam_kwargs):
     """Predict."""

@@ -21,6 +21,7 @@ from absl import logging
 import numpy as np
 from pegasus.ops import public_parsing_ops
 from pegasus.eval.rouge_tensors import evaluate_r1, evaluate_r2, evaluate_rl
+from pegasus.models.control_variate import ffn_model
 from tensor2tensor.utils import adafactor
 import tensorflow as tf
 
@@ -123,8 +124,11 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       with contrib_tpu.bfloat16_scope():
         loss, outputs = model_params.model()(features, training)
     else:
+      # global_step = tf.train.get_global_step()
+      # if global_step % 2 == 0:
       XENT_loss, outputs = model_params.model()(features, training)
-      # outputs = model_params.model()(features, training)
+      # else
+      # ffn_output = ffn_model(features)
 
     # TPU requires outputs all have batch dimension and doesn't handle scalar.
     # Tile all scalars to 1 dimension vector.
@@ -223,6 +227,13 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
 
       ##########################################################################################
 
+      # Alternate optimizations
+      # ffn_loss = tf.keras.losses.MSE(r1_score_soft, ffn_output)  # (f(b) - c(b))^2
+      # list_of_gradient_variable_pairs = tf.cond(tf.equal(tf.mod(global_step, 2), 0),
+      #                      true_fn=lambda: optimizer.compute_gradients(XENT_loss),
+      #                      false_fn=lambda: optimizer.compute_gradients(ffn_loss)
+      #                      )
+
       # Accessing the gradient of loss
       list_of_gradient_variable_pairs = optimizer.compute_gradients(XENT_loss)
       train_op = optimizer.apply_gradients(list_of_gradient_variable_pairs,
@@ -236,7 +247,8 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
 
       logging_hook = tf.train.LoggingTensorHook({"loss": XENT_loss,  # or loss
                                                  "learning_rate": lr,
-                                                 "ffn_loss": outputs["ffn_output"],
+                                                 # "ffn_loss": ffn_loss,
+                                                 # "ffn_output": ffn_output,
                                                  # "hard_reinforce_loss": hard_reinforce_loss,
                                                  # "soft_reinforce_loss": soft_reinforce_loss,
                                                  # "XENT_loss": XENT_loss,
@@ -250,7 +262,7 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # This is the configured estimator function that is returned to train the model
       return tpu_estimator.TPUEstimatorSpec(
           mode=mode,
-          loss=XENT_loss,  # change loss here
+          loss=XENT_loss,
           train_op=train_op,
           training_hooks=[logging_hook],
           scaffold_fn=_load_vars_from_checkpoint(use_tpu,
