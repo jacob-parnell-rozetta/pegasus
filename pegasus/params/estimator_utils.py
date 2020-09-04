@@ -236,7 +236,7 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
 
       logging_hook = tf.train.LoggingTensorHook({"loss": XENT_loss,  # or loss
                                                  "learning_rate": lr,
-                                                 "ffn_loss": outputs["ffn_loss"],
+                                                 "ffn_loss": outputs["ffn_output"],
                                                  # "hard_reinforce_loss": hard_reinforce_loss,
                                                  # "soft_reinforce_loss": soft_reinforce_loss,
                                                  # "XENT_loss": XENT_loss,
