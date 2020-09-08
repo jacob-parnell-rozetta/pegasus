@@ -191,7 +191,7 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
 
       ##### REINFORCE LOSS #########################################################################################
       # Create index tensors to stack and get corresponding probabilities from logp
-      sequence_index = tf.constant(np.arange(0, 32))  # DYNAMIC: seq_len, not 32
+      sequence_index = tf.constant(np.arange(0, outputs["targets"].get_shape().as_list()[1]))  # changes w/ target len
       batch_index = tf.constant(np.zeros(sequence_index.get_shape().as_list()[0]), dtype=tf.int64)
 
       # ARGMAX logp values
