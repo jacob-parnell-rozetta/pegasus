@@ -2,6 +2,7 @@ import tensorflow as tf
 
 
 def ffn_model(features):
+    # should the input be the hidden states rather than inputs from data?
     ffn_input_size = features["inputs"].get_shape().as_list()[1]  # max input length 512
     # ffn_target_size = features["targets"].get_shape().as_list()[1]  # max target length 32
     hidden1_size = 128

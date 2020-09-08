@@ -116,9 +116,9 @@ class TransformerEncoderDecoderModel(base.BaseModel):
     # want the one hot targets for sampling
     one_hot_targets = tf.one_hot(targets_BxT, self._vocab_size)
 
-    # return loss, {"loss_1": loss_1, "loss_2": loss_2, "logits": logits_BxTxV}
-    return XENT_loss, {"logits": logits_BxTxV, "targets": targets_BxT, "one_hot_targets":
-        one_hot_targets}
+    return XENT_loss, {"logits": logits_BxTxV, "targets": targets_BxT, "one_hot_targets": one_hot_targets,
+                       "hidden_states": states_BxTxD, "context_memory": context["memory"], "context_bias": context[
+                        "memory_bias"]}
 
   def predict(self, features, max_decode_len, beam_size, **beam_kwargs):
     """Predict."""
