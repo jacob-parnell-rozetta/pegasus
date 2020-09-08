@@ -18,6 +18,7 @@ def ffn_model(features):
               "b2": tf.Variable(tf.zeros([ffn_output_size]))}
 
     def shallow_network(x_input, w, b):
+        x_input = tf.cast(x_input, tf.float32)  # convert inputs to same type as weights
         layer_1 = tf.add(tf.matmul(x_input, w['w1']), b['b1'])
         layer_1 = tf.nn.relu(layer_1)
         output_layer = tf.add(tf.matmul(layer_1, w['w2']), b['b2'])
