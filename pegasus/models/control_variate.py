@@ -1,9 +1,9 @@
 import tensorflow as tf
 
 
-def ffn_model(features):
+def ffn_model(inputs):
     # should the input be the hidden states rather than inputs from data?
-    ffn_input_size = features["inputs"].get_shape().as_list()[1]  # max input length 512
+    ffn_input_size = inputs.get_shape().as_list()[1]  # max input length 512
     # ffn_target_size = features["targets"].get_shape().as_list()[1]  # max target length 32
     hidden1_size = 128
     ffn_output_size = 1  # scalar value to subtract from rouge loss
@@ -25,6 +25,6 @@ def ffn_model(features):
         return output_layer
 
     with tf.variable_scope("control_variate", reuse=tf.AUTO_REUSE):
-        ffn_output = shallow_network(features["inputs"], weights, biases)  # baseline scorer
+        ffn_output = shallow_network(inputs, weights, biases)  # baseline scorer
 
     return ffn_output
