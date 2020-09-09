@@ -146,27 +146,27 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       ##############################################################################################################
       ##### SAMPLING ###############################################################################################
       # Normalise logits to log-prob, and compute Gumbel samples with location
-      logit_probs = tf.math.softmax(outputs["logits"])  # should not be x <= 0
-      clipped_logit_probs = tf.clip_by_value(logit_probs, 1e-8, 1.0)
-      logp = tf.log(clipped_logit_probs)
+      # logit_probs = tf.math.softmax(outputs["logits"])  # should not be x <= 0
+      # clipped_logit_probs = tf.clip_by_value(logit_probs, 1e-8, 1.0)
+      # logp = tf.log(clipped_logit_probs)
 
       # ARGMAX
       # argmax_logp_index = tf.math.argmax(logp, axis=2)  # Returns indexes where logp is max
 
       # SOFTMAX - 'soft' labels of the Gumbel samples, and their one-hot labels
-      u = tf.random_uniform(shape=outputs["one_hot_targets"].get_shape().as_list(),
-                            minval=0,
-                            maxval=1,
-                            dtype=tf.float32)
-      z = tf.math.add(-tf.log(-tf.log(u)), logp)
-      y_soft = tf.math.softmax(tf.div(z, 0.1))  # tau = 0.1
-      sample_y = tf.math.argmax(y_soft, axis=2)  # argmax along the vocab dimension
+      # u = tf.random_uniform(shape=outputs["one_hot_targets"].get_shape().as_list(),
+      #                       minval=0,
+      #                       maxval=1,
+      #                       dtype=tf.float32)
+      # z = tf.math.add(-tf.log(-tf.log(u)), logp)
+      # y_soft = tf.math.softmax(tf.div(z, 0.1))  # tau = 0.1
+      # sample_y = tf.math.argmax(y_soft, axis=2)  # argmax along the vocab dimension
 
       ##### DECODING + ROUGE LOSS ##################################################################################
       # TARGET text
-      decode_target_text_tensor = public_parsing_ops.decode(outputs["targets"], model_params.vocab_filename,
-                                                            model_params.encoder_type)
-      decode_target_text = decode_target_text_tensor[0]  # returned tensor in bytes format
+      # decode_target_text_tensor = public_parsing_ops.decode(outputs["targets"], model_params.vocab_filename,
+      #                                                       model_params.encoder_type)
+      # decode_target_text = decode_target_text_tensor[0]  # returned tensor in bytes format
 
       # ARGMAX text
       # decode_preds_text_tensor_hard = public_parsing_ops.decode(argmax_logp_index, model_params.vocab_filename,
@@ -174,25 +174,25 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # decode_preds_text_hard = decode_preds_text_tensor_hard[0]  # returned tensor in bytes format
 
       # do not want to propagate the gradient through the ROUGE hook
-      decode_target_text = tf.stop_gradient(decode_target_text)
+      # decode_target_text = tf.stop_gradient(decode_target_text)
       # decode_preds_text_hard = tf.stop_gradient(decode_preds_text_hard)
 
       # calculate ROUGE loss (argmax)
       # r1_score_hard = tf.py_function(evaluate_r1, (decode_target_text, decode_preds_text_hard), tf.float32)
 
       # SOFTMAX text
-      decode_preds_text_tensor_soft = public_parsing_ops.decode(sample_y, model_params.vocab_filename,
-                                                                model_params.encoder_type)
-      decode_preds_text_soft = decode_preds_text_tensor_soft[0]
-      decode_preds_text_soft = tf.stop_gradient(decode_preds_text_soft)
+      # decode_preds_text_tensor_soft = public_parsing_ops.decode(sample_y, model_params.vocab_filename,
+      #                                                           model_params.encoder_type)
+      # decode_preds_text_soft = decode_preds_text_tensor_soft[0]
+      # decode_preds_text_soft = tf.stop_gradient(decode_preds_text_soft)
 
       # calculate ROUGE loss (softmax)
-      r1_score_soft = tf.py_function(evaluate_r1, (decode_target_text, decode_preds_text_soft), tf.float32)
+      # r1_score_soft = tf.py_function(evaluate_r1, (decode_target_text, decode_preds_text_soft), tf.float32)
 
       ##### REINFORCE LOSS #########################################################################################
       # Create index tensors to stack and get corresponding probabilities from logp
-      sequence_index = tf.constant(np.arange(0, outputs["targets"].get_shape().as_list()[1]))  # changes w/ target len
-      batch_index = tf.constant(np.zeros(sequence_index.get_shape().as_list()[0]), dtype=tf.int64)
+      # sequence_index = tf.constant(np.arange(0, outputs["targets"].get_shape().as_list()[1]))  # changes w/ target len
+      # batch_index = tf.constant(np.zeros(sequence_index.get_shape().as_list()[0]), dtype=tf.int64)
 
       # ARGMAX logp values
       # argmax_logp_new = tf.reshape(argmax_logp_index, [argmax_logp_index.get_shape().as_list()[1]])
@@ -200,9 +200,9 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # argmax_logp = tf.gather_nd(logp, index_tensor_hard)  # finds log probs using hard indexing
 
       # SOFTMAX logp values
-      sample_y_new = tf.reshape(sample_y, [sample_y.get_shape().as_list()[1]])
-      index_tensor_soft = tf.stack([batch_index, sequence_index, sample_y_new], axis=1)
-      softmax_logp = tf.gather_nd(logp, index_tensor_soft)  # finds log probs using soft indexing
+      # sample_y_new = tf.reshape(sample_y, [sample_y.get_shape().as_list()[1]])
+      # index_tensor_soft = tf.stack([batch_index, sequence_index, sample_y_new], axis=1)
+      # softmax_logp = tf.gather_nd(logp, index_tensor_soft)  # finds log probs using soft indexing
 
       ##### REINFORCE w/ BASELINE ##################################################################################
       # weight the logp by ROUGE score, sum values, and invert sign (of logp)
@@ -249,6 +249,7 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
 
       logging_hook = tf.train.LoggingTensorHook({"loss": XENT_loss,  # or loss
                                                  "learning_rate": lr,
+                                                 "global_step": global_step,
                                                  # "ffn_loss": ffn_loss,
                                                  # "ffn_output": ffn_output,
                                                  # "hard_reinforce_loss": hard_reinforce_loss,
