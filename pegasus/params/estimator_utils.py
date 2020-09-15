@@ -170,12 +170,12 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # sample_y = tf.math.argmax(y_soft, axis=2)  # REPLACED WITH b
 
       # For RELAX implementation
-      # v_prime -> used to create v to form z_tilde
-      # v_prime = tf.random_uniform(shape=outputs["one_hot_targets"].get_shape().as_list(),
-      #                             minval=0,
-      #                             maxval=1,
-      #                             dtype=tf.float32)
-      # b = tf.stop_gradient(tf.math.argmax(z, axis=2))  # replaces sample_y
+      # v used to create z_tilde
+      # v = tf.random_uniform(shape=outputs["one_hot_targets"].get_shape().as_list(),
+      #                       minval=0,
+      #                       maxval=1,
+      #                       dtype=tf.float32)
+      # b = tf.stop_gradient(tf.math.argmax(z, axis=2))  # REPLACES sample_y
       # z_tilde =  # TODO: equation 17 in RELAX appendix
 
       # sequence_index = tf.constant(np.arange(0, outputs["targets"].get_shape().as_list()[1]))  # changes w/ target len
@@ -252,7 +252,7 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # Construct gradient estimator
       # f_y = r1_score_soft  # rouge loss value of samples
       # c_z_tilde  # defined above as the output of the NN with z_tilde as input
-      # d_logp_d_theta = tf.gradients(sample_y, logit_theta)[0]
+      # d_logp_d_theta = tf.gradients(b, logit_theta)[0]
       # d_c_z_tilde_d_theta = tf.gradients(c_z_tilde, logit_theta)[0]
       # d_c_z_d_theta = tf.gradients(c_z, logit_theta)[0]
 
@@ -265,7 +265,7 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # Calculate the normal optimization step
       # list_of_gradient_variable_pairs = optimizer.compute_gradients(XENT_loss)
       # TODO: check format of input to apply_gradients is appropriate
-      #  either, extract grads and only pass to apply_grads, OR format relax to be in grad_vars list format
+      #  :either, extract grads and only pass to apply_grads, OR format relax to be in grad_vars list format
       # train_op = optimizer.apply_gradients([0.4relax+0.6list_of_gradient_variable_pairs], global_step=global_step)
 
       # initialise adafactor again for variance optimiser
