@@ -166,8 +166,8 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       #                       maxval=1,
       #                       dtype=tf.float32)
       # z = tf.math.add(-tf.log(-tf.log(u)), logp)
-      # y_soft = tf.math.softmax(tf.div(z, temperature))  # TODO: is this sent to the NN: c(softmax(z, temp))?
-      # sample_y = tf.math.argmax(y_soft, axis=2)  # argmax along the vocab dimension
+      # y_soft = tf.math.softmax(tf.div(z, temperature))
+      # sample_y = tf.math.argmax(y_soft, axis=2)  # REPLACED WITH b
 
       # For RELAX implementation
       # v_prime -> used to create v to form z_tilde
@@ -175,11 +175,12 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       #                             minval=0,
       #                             maxval=1,
       #                             dtype=tf.float32)
-      # b = tf.stop_gradient(tf.math.argmax(z, axis=2))  # axis=2 (check dims)
-      # u_prime = tf.nn.sigmoid(-logit_theta)  # TODO: or expit(-logit_theta)
-      # z_tilde = b * (v_prime * (1 - u_prime) + u_prime) + (1 - b) * v_prime * u_prime
-      # TODO: will the above suffice or eq 17. in RELAX paper Appendix B?
-      # TODO: logit_theta == log_alpha -> where do we define this?
+      # b = tf.stop_gradient(tf.math.argmax(z, axis=2))  # replaces sample_y
+      # z_tilde =  # TODO: equation 17 in RELAX appendix
+
+      # sequence_index = tf.constant(np.arange(0, outputs["targets"].get_shape().as_list()[1]))  # changes w/ target len
+      # batch_index = tf.constant(np.zeros(sequence_index.get_shape().as_list()[0]), dtype=tf.int64)
+      # logit_theta = tf.gather_nd(logp, b)  # finds logit_theta: logp(b)
 
       ##### DECODING + ROUGE LOSS ###################################################################################
       # TARGET text
@@ -238,9 +239,9 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
 
       ##### FFN LOSS ################################################################################################
       # FFN baseline score - outputs["hidden_states"], outputs["context_memory"], outputs["context_bias"]
-      # ffn_output = ffn_model(outputs["hidden_states"], outputs["context_memory)
+      # ffn_output = ffn_model(outputs["hidden_states"], outputs["context_memory"])
 
-      # loss_difference = tf.subtract(ffn_output, r1_score_soft)  # baseline - rouge loss (sample) (vice-versa)
+      # loss_difference = tf.subtract(r1_score_soft, ffn_output)
       # reinforce_baseline = tf.reduce_sum(tf.multiply(loss_difference, softmax_logp))
 
       ##### RELAX LOSS ##############################################################################################
@@ -262,10 +263,10 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # variance_loss = tf.reduce_mean(tf.square(relax))
 
       # Calculate the normal optimization step
-      # TODO: will this work if not a scalar?
-      # list_of_gradient_variable_pairs = optimizer.compute_gradients(relax)
-      # TODO: or do we implement the additional steps: [extract grads, compute grads of grads wrt. est_params]
-      # train_op = optimizer.apply_gradients(list_of_gradient_variable_pairs, global_step=global_step)
+      # list_of_gradient_variable_pairs = optimizer.compute_gradients(XENT_loss)
+      # TODO: check format of input to apply_gradients is appropriate
+      #  either, extract grads and only pass to apply_grads, OR format relax to be in grad_vars list format
+      # train_op = optimizer.apply_gradients([0.4relax+0.6list_of_gradient_variable_pairs], global_step=global_step)
 
       # initialise adafactor again for variance optimiser
       # var_opt = adafactor.AdafactorOptimizer(
@@ -290,10 +291,6 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       ###############################################################################################################
       # Calculate gradients
       list_of_gradient_variable_pairs = optimizer.compute_gradients(XENT_loss)
-      # pegasus_params = [tv for tv in tf.trainable_variables() if "control_variate" not in tv.name]
-      # vector_of_grads = [gradients[0] for gradients in list_of_gradient_variable_pairs]
-      # ensure that est_params is defined: [nn_params, temperature, eta]
-      # new_list_of_gradient_variable_pairs = tf.gradients(vector_of_grads, est_params)
       train_op = optimizer.apply_gradients(list_of_gradient_variable_pairs, global_step=global_step)
 
       tf.logging.set_verbosity(tf.logging.INFO)
