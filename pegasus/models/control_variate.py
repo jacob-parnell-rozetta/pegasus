@@ -30,11 +30,13 @@ def ffn_model(inputs, ground_truth=None):
         layer_2 = tf.nn.relu(layer_2)
         output_layer_2 = tf.add(tf.matmul(layer_2, w['w4']), b['b4'])
 
-        combine = tf.concat([tf.squeeze(output_layer_1, axis=2), tf.squeeze(output_layer_2, axis=2)], axis=1)
+        # combine = tf.concat([tf.squeeze(output_layer_1, axis=2), tf.squeeze(output_layer_2, axis=2)], axis=1)
+        combine = tf.reduce_sum(tf.stack([tf.squeeze(tf.squeeze(output_layer_1, axis=2), axis=0)[-1],
+                                          tf.squeeze(tf.squeeze(output_layer_2, axis=2), axis=0)[-1]]))
         return combine
 
     with tf.variable_scope("control_variate", reuse=tf.AUTO_REUSE):
-        ffn_output = shallow_network(inputs, weights, biases, ground_truth)  # baseline scorer
+        ffn_output = shallow_network(inputs, ground_truth, weights, biases)  # baseline scorer
         # ffn_output = tf.reduce_mean(ffn_output)
 
     return ffn_output

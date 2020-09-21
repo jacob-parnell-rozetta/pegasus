@@ -150,7 +150,9 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # log_temperature = tf.Variable([np.log(0.1) for i in range(1)], trainable=True, name='log_temperature',
       #                               dtype=tf.float32)
       # temperature = tf.exp(log_temperature)
+      # temperature = 0.1  # non-RELAX implementation
 
+      # Create index tensors to stack and get corresponding probabilities from logp
       # sequence_index = tf.constant(np.arange(0, outputs["targets"].get_shape().as_list()[1]))
       # batch_index = tf.constant(np.zeros(sequence_index.get_shape().as_list()[0]), dtype=tf.int64)
 
@@ -170,7 +172,7 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       #                       dtype=tf.float32)
       # z = tf.math.add(-tf.log(-tf.log(u)), logp)
       # y_soft = tf.math.softmax(tf.div(z, temperature))
-      # sample_y = tf.math.argmax(y_soft, axis=2)  # REPLACED WITH b
+      # sample_y = tf.math.argmax(y_soft, axis=2)  # REPLACED WITH b - do we use this, or b, for r1_score_soft?
 
       ##### For RELAX implementation ################################################################################
       # v = tf.random_uniform(shape=outputs["one_hot_targets"].get_shape().as_list(),
@@ -186,14 +188,21 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # v_b = tf.gather_nd(v, index_tensor_b)  # create v_b -> returns values of v where b are the argmax indexes
       # argmax_vb = tf.math.argmax(v_b)  # calculate -log(-log(v_b)) in z_tilde at this index
 
-      # find value where vb is argmax
-      # indices = tf.constant([[argmax_vb]])
-      # updates = tf.constant(-tf.log(-tf.log(tf.gather(v_b, argmax_vb))))
+      # update = v_b[argmax_vb]  # find value where vb is argmax
       # theta_b = tf.gather_nd(clipped_logit_probs, index_tensor_b)  # returns values of theta where b are indexes
 
-      # z_tilde = -tf.log(-tf.div(tf.log(v_b), theta_b) - tf.log(v_b))
-      # z_tilde[argmax_vb] = -tf.log(-tf.log(tf.gather(v_b, argmax_vb)))  # will this work?
-      # z_tilde = tf.compat.v1.scatter_nd_update(z_tilde, indices, updates)  # TODO!!
+      # z_tilde = -tf.log(-tf.div(tf.log(v_b), theta_b) - tf.log(v_b))  # where i != b
+
+      # to create a mask for where i == b
+      # np_array = np.ones(z_tilde.get_shape().as_list(), dtype=bool)
+
+      # def np_tensor(nparray, index):
+      #     ix = index.numpy()
+      #     nparray = nparray.numpy()
+      #     nparray[ix] = False
+      #     return tf.Variable(nparray).read_value()
+      # np_array = tf.py_function(np_tensor, (np_array, argmax_vb), tf.bool)  # bool tensor where argmax_vb is updated
+      # z_tilde = tf.compat.v1.where(np_array, z_tilde, tf.fill(z_tilde.get_shape().as_list(), update))  # where i == b
 
       # logit_theta = tf.gather_nd(logp, b)  # finds logit_theta: logp(b)
 
@@ -225,10 +234,6 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # r1_score_soft = tf.py_function(evaluate_r1, (decode_target_text, decode_preds_text_soft), tf.float32)
 
       ##### REINFORCE LOSS ##########################################################################################
-      # Create index tensors to stack and get corresponding probabilities from logp
-      # sequence_index = tf.constant(np.arange(0, outputs["targets"].get_shape().as_list()[1]))  # changes w/ target len
-      # batch_index = tf.constant(np.zeros(sequence_index.get_shape().as_list()[0]), dtype=tf.int64)
-
       # ARGMAX logp values
       # argmax_logp_new = tf.reshape(argmax_logp_index, [argmax_logp_index.get_shape().as_list()[1]])
       # index_tensor_hard = tf.stack([batch_index, sequence_index, argmax_logp_new], axis=1)
@@ -325,11 +330,17 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       logging_hook = tf.train.LoggingTensorHook({"loss": XENT_loss,  # or loss
                                                  "learning_rate": lr,
                                                  "global_step": global_step,
+                                                 # "argmax_vb": argmax_vb,
+                                                 # "vb": v_b,
+                                                 # "update": update,
+                                                 # "theta_b": theta_b,
+                                                 # "z_tilde": z_tilde,
+                                                 # "logit_theta": logit_theta,
+                                                 # "log_temperature": log_temperature,
                                                  # "ffn_loss": ffn_loss,
                                                  # "ffn_output": ffn_output,
                                                  # "hard_reinforce_loss": hard_reinforce_loss,
                                                  # "soft_reinforce_loss": soft_reinforce_loss,
-                                                 # "XENT_loss": XENT_loss,
                                                  # "target_text": decode_target_text,
                                                  # "soft_preds_text": decode_preds_text_soft,
                                                  # "hard_preds_text": decode_preds_text_hard,
