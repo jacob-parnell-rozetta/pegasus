@@ -151,6 +151,9 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       #                               dtype=tf.float32)
       # temperature = tf.exp(log_temperature)
 
+      # sequence_index = tf.constant(np.arange(0, outputs["targets"].get_shape().as_list()[1]))
+      # batch_index = tf.constant(np.zeros(sequence_index.get_shape().as_list()[0]), dtype=tf.int64)
+
       ##### SAMPLING ################################################################################################
       # Normalise logits to log-prob, and compute Gumbel samples with location
       # logit_probs = tf.math.softmax(outputs["logits"])  # should not be x <= 0
@@ -169,17 +172,29 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # y_soft = tf.math.softmax(tf.div(z, temperature))
       # sample_y = tf.math.argmax(y_soft, axis=2)  # REPLACED WITH b
 
-      # For RELAX implementation
-      # v used to create z_tilde
+      ##### For RELAX implementation ################################################################################
       # v = tf.random_uniform(shape=outputs["one_hot_targets"].get_shape().as_list(),
       #                       minval=0,
       #                       maxval=1,
       #                       dtype=tf.float32)
       # b = tf.stop_gradient(tf.math.argmax(z, axis=2))  # REPLACES sample_y
-      # z_tilde =  # TODO: equation 17 in RELAX appendix
 
-      # sequence_index = tf.constant(np.arange(0, outputs["targets"].get_shape().as_list()[1]))  # changes w/ target len
-      # batch_index = tf.constant(np.zeros(sequence_index.get_shape().as_list()[0]), dtype=tf.int64)
+      # to implement z_tilde
+      # b_new = tf.reshape(b, [b.get_shape().as_list()[1]])
+      # index_tensor_b = tf.stack([batch_index, sequence_index, b_new], axis=1)
+
+      # v_b = tf.gather_nd(v, index_tensor_b)  # create v_b -> returns values of v where b are the argmax indexes
+      # argmax_vb = tf.math.argmax(v_b)  # calculate -log(-log(v_b)) in z_tilde at this index
+
+      # find value where vb is argmax
+      # indices = tf.constant([[argmax_vb]])
+      # updates = tf.constant(-tf.log(-tf.log(tf.gather(v_b, argmax_vb))))
+      # theta_b = tf.gather_nd(clipped_logit_probs, index_tensor_b)  # returns values of theta where b are indexes
+
+      # z_tilde = -tf.log(-tf.div(tf.log(v_b), theta_b) - tf.log(v_b))
+      # z_tilde[argmax_vb] = -tf.log(-tf.log(tf.gather(v_b, argmax_vb)))  # will this work?
+      # z_tilde = tf.compat.v1.scatter_nd_update(z_tilde, indices, updates)  # TODO!!
+
       # logit_theta = tf.gather_nd(logp, b)  # finds logit_theta: logp(b)
 
       ##### DECODING + ROUGE LOSS ###################################################################################
@@ -237,12 +252,19 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # combined_loss = tf.math.add(tf.multiply(tf.constant(0.6, dtype=tf.float32), XENT_loss),
       #                             tf.multiply(tf.constant(0.4, dtype=tf.float32), hard_reinforce_loss))
 
+      # OR conditional loss switch
+      # constraint = tf.random_uniform(shape=(), minval=0, maxval=1, dtype=tf.float32)
+      # combined_loss = tf.cond(constraint > 0.8, lambda: hard_reinforce_loss, lambda: XENT_loss)
+
       ##### FFN LOSS ################################################################################################
       # FFN baseline score - outputs["hidden_states"], outputs["context_memory"], outputs["context_bias"]
       # ffn_output = ffn_model(outputs["hidden_states"], outputs["context_memory"])
 
       # loss_difference = tf.subtract(r1_score_soft, ffn_output)
       # reinforce_baseline = tf.reduce_sum(tf.multiply(loss_difference, softmax_logp))
+
+      # constraint = tf.random_uniform(shape=(), minval=0, maxval=1, dtype=tf.float32)
+      # combined_loss = tf.cond(constraint > 0.8, lambda: reinforce_baseline, lambda: XENT_loss)
 
       ##### RELAX LOSS ##############################################################################################
       # Input z and z_tilde into NN
@@ -290,6 +312,9 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
 
       ###############################################################################################################
       # Calculate gradients
+      # If freezing layers, only optimise wrt certain layers (find names) - speeds up, worsens performance
+      # last_params = [tv for tv in tf.trainable_variables() if "decoder/LayerNorm/" in tv.name]
+      # list_of_gradient_variable_pairs = optimizer.compute_gradients(combined_loss, var_list=last_params)
       list_of_gradient_variable_pairs = optimizer.compute_gradients(XENT_loss)
       train_op = optimizer.apply_gradients(list_of_gradient_variable_pairs, global_step=global_step)
 
