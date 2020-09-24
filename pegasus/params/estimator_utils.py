@@ -21,7 +21,7 @@ from absl import logging
 import numpy as np
 from pegasus.ops import public_parsing_ops
 from pegasus.eval.rouge_tensors import evaluate_r1, evaluate_r2, evaluate_rl
-from pegasus.models.control_variate import ffn_model
+from pegasus.models.control_variate import ffn_baseline, control_variate
 from tensor2tensor.utils import adafactor
 import tensorflow as tf
 
@@ -150,7 +150,6 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # log_temperature = tf.Variable([np.log(0.1) for i in range(1)], trainable=True, name='log_temperature',
       #                               dtype=tf.float32)
       # temperature = tf.exp(log_temperature)
-      # temperature = 0.1  # non-RELAX implementation
 
       # Create index tensors to stack and get corresponding probabilities from logp
       # sequence_index = tf.constant(np.arange(0, outputs["targets"].get_shape().as_list()[1]))
@@ -181,30 +180,24 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       #                       dtype=tf.float32)
       # b = tf.stop_gradient(tf.math.argmax(z, axis=2))  # REPLACES sample_y
 
-      # to implement z_tilde
+      # create z_tilde as the manipulation of v, and then adjust the values at the argmax b, to be the updated values
+      # z_tilde = -tf.log(-tf.div(tf.log(v), clipped_logit_probs) - tf.log(v))  # where i != b
+
+      # create index tensor where b is the argmax, to use as indexer for substition
       # b_new = tf.reshape(b, [b.get_shape().as_list()[1]])
       # index_tensor_b = tf.stack([batch_index, sequence_index, b_new], axis=1)
 
       # v_b = tf.gather_nd(v, index_tensor_b)  # create v_b -> returns values of v where b are the argmax indexes
-      # argmax_vb = tf.math.argmax(v_b)  # calculate -log(-log(v_b)) in z_tilde at this index
+      # update = -tf.log(-tf.log(v_b))
 
-      # update = v_b[argmax_vb]  # find value where vb is argmax
-      # theta_b = tf.gather_nd(clipped_logit_probs, index_tensor_b)  # returns values of theta where b are indexes
+      # def conversion(ref, indices, update):
+      # replace the values of z_tilde for each token in seq_len, where i == b with update
+      #     ref = tf.Variable(ref)
+      #     z_tilde = tf.scatter_nd_update(ref, indices, update)
+      #     return z_tilde
+      # z_tilde = tf.py_function(conversion, (z_tilde, index_tensor_b, update), tf.float32)  # updated z_tilde
 
-      # z_tilde = -tf.log(-tf.div(tf.log(v_b), theta_b) - tf.log(v_b))  # where i != b
-
-      # to create a mask for where i == b
-      # np_array = np.ones(z_tilde.get_shape().as_list(), dtype=bool)
-
-      # def np_tensor(nparray, index):
-      #     ix = index.numpy()
-      #     nparray = nparray.numpy()
-      #     nparray[ix] = False
-      #     return tf.Variable(nparray).read_value()
-      # np_array = tf.py_function(np_tensor, (np_array, argmax_vb), tf.bool)  # bool tensor where argmax_vb is updated
-      # z_tilde = tf.compat.v1.where(np_array, z_tilde, tf.fill(z_tilde.get_shape().as_list(), update))  # where i == b
-
-      # logit_theta = tf.gather_nd(logp, b)  # finds logit_theta: logp(b)
+      # logit_theta = tf.gather_nd(logp, index_tensor_b)  # finds logit_theta: logp(b)
 
       ##### DECODING + ROUGE LOSS ###################################################################################
       # TARGET text
@@ -263,7 +256,7 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
 
       ##### FFN LOSS ################################################################################################
       # FFN baseline score - outputs["hidden_states"], outputs["context_memory"], outputs["context_bias"]
-      # ffn_output = ffn_model(outputs["hidden_states"], outputs["context_memory"])
+      # ffn_output = ffn_baseline(outputs["hidden_states"], outputs["context_memory"])
 
       # loss_difference = tf.subtract(r1_score_soft, ffn_output)
       # reinforce_baseline = tf.reduce_sum(tf.multiply(loss_difference, softmax_logp))
@@ -273,8 +266,8 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
 
       ##### RELAX LOSS ##############################################################################################
       # Input z and z_tilde into NN
-      # c_z = ffn_model(z)
-      # c_z_tilde = ffn_model(z_tilde)
+      # c_z = control_variate(z)
+      # c_z_tilde = control_variate(z_tilde)
 
       # Construct gradient estimator
       # f_y = r1_score_soft  # rouge loss value of samples
@@ -330,10 +323,8 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       logging_hook = tf.train.LoggingTensorHook({"loss": XENT_loss,  # or loss
                                                  "learning_rate": lr,
                                                  "global_step": global_step,
-                                                 # "argmax_vb": argmax_vb,
                                                  # "vb": v_b,
                                                  # "update": update,
-                                                 # "theta_b": theta_b,
                                                  # "z_tilde": z_tilde,
                                                  # "logit_theta": logit_theta,
                                                  # "log_temperature": log_temperature,
