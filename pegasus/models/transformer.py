@@ -113,26 +113,12 @@ class TransformerEncoderDecoderModel(base.BaseModel):
         label_smoothing=self._label_smoothing,
         weights=targets_mask_BxT)
 
-    # additional loss value
-    # targets_BxT_2 = tf.random.uniform(shape=targets_BxT.get_shape().as_list(), minval=0,
-    #                                   maxval=30, dtype=tf.int64)
-    # loss_2 = tf.losses.softmax_cross_entropy(
-    #     tf.one_hot(targets_BxT_2, self._vocab_size),
-    #     logits_BxTxV,
-    #     label_smoothing=self._label_smoothing,
-    #     weights=targets_mask_BxT)
-
-    # Add losses to create toy loss
-    # loss = tf.math.add(loss_1, loss_2)
-    # If you want to use the original loss
-    # loss = loss_1
-
     # want the one hot targets for sampling
     one_hot_targets = tf.one_hot(targets_BxT, self._vocab_size)
 
-    # return loss, {"loss_1": loss_1, "loss_2": loss_2, "logits": logits_BxTxV}
-    return XENT_loss, {"logits": logits_BxTxV, "targets": targets_BxT, "one_hot_targets":
-        one_hot_targets}
+    return XENT_loss, {"logits": logits_BxTxV, "targets": targets_BxT, "one_hot_targets": one_hot_targets,
+                       "hidden_states": states_BxTxD, "context_memory": context["memory"], "context_bias": context[
+                        "memory_bias"]}
 
   def predict(self, features, max_decode_len, beam_size, **beam_kwargs):
     """Predict."""

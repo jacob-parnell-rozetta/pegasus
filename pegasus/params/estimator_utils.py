@@ -21,6 +21,7 @@ from absl import logging
 import numpy as np
 from pegasus.ops import public_parsing_ops
 from pegasus.eval.rouge_tensors import evaluate_r1, evaluate_r2, evaluate_rl
+from pegasus.models.control_variate import ffn_baseline, control_variate
 from tensor2tensor.utils import adafactor
 import tensorflow as tf
 
@@ -114,9 +115,6 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       return tpu_estimator.TPUEstimatorSpec(mode=mode, predictions=predictions)
 
     # TRAINING
-    # I think that this is where the model will calculate the loss and the outputs
-    # at the END of the training steps? I would think it would do it for the number
-    # of training steps as a for loop?
     training = mode == tf.estimator.ModeKeys.TRAIN
     # use_tpu is false by default so this skips
     if use_tpu and model_params.use_bfloat16:
@@ -124,130 +122,227 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
         loss, outputs = model_params.model()(features, training)
     else:
       XENT_loss, outputs = model_params.model()(features, training)
-      # outputs = model_params.model()(features, training)
 
     # TPU requires outputs all have batch dimension and doesn't handle scalar.
     # Tile all scalars to 1 dimension vector.
     outputs = _tile_scalar_to_batch_size(outputs, model_params.batch_size)
 
+    # Create optimizer and define learning rate
     if mode == tf.estimator.ModeKeys.TRAIN:
       init_lr = model_params.learning_rate
       global_step = tf.train.get_global_step()
       lr = init_lr / 0.01 * tf.rsqrt(
           tf.maximum(tf.to_float(global_step), 10000))
       if train_init_checkpoint:
-        lr = tf.minimum(
-            tf.to_float(global_step + 1) / train_warmup_steps * init_lr, lr)
+          lr = tf.minimum(tf.to_float(global_step + 1) / train_warmup_steps * init_lr, lr)
 
       optimizer = adafactor.AdafactorOptimizer(
           learning_rate=lr,
           decay_rate=adafactor.adafactor_decay_rate_pow(0.8),
           beta1=0.0)
       if use_tpu:
-        optimizer = tpu_optimizer.CrossShardOptimizer(optimizer)
+          optimizer = tpu_optimizer.CrossShardOptimizer(optimizer)
 
-      ##########################################################################################
+      ###############################################################################################################
+      ##### VARIABLES ###############################################################################################
+      # REBAR/RELAX variables - need to change the range(.) value -> num_latents?
+      # eta = tf.Variable([1.0 for i in range(1)], trainable=True, name='eta', dtype=tf.float32)
+      # log_temperature = tf.Variable([np.log(0.1) for i in range(1)], trainable=True, name='log_temperature',
+      #                               dtype=tf.float32)
+      # temperature = tf.exp(log_temperature)
 
+      # Create index tensors to stack and get corresponding probabilities from logp
+      # sequence_index = tf.constant(np.arange(0, outputs["targets"].get_shape().as_list()[1]))
+      # batch_index = tf.constant(np.zeros(sequence_index.get_shape().as_list()[0]), dtype=tf.int64)
+
+      ##### SAMPLING ################################################################################################
       # Normalise logits to log-prob, and compute Gumbel samples with location
-      logit_probs = tf.math.softmax(outputs["logits"])  # should not be x <= 0
-      clipped_logit_probs = tf.clip_by_value(logit_probs, 1e-8, 1.0)
-      logp = tf.log(clipped_logit_probs)
+      # logit_probs = tf.math.softmax(outputs["logits"])  # should not be x <= 0
+      # clipped_logit_probs = tf.clip_by_value(logit_probs, 1e-8, 1.0)  # backed by RELAX operation "safe_log_prob"
+      # logp = tf.log(clipped_logit_probs)
 
       # ARGMAX
-      argmax_logp_index = tf.math.argmax(logp, axis=2)  # Returns indexes where logp is max
+      # argmax_logp_index = tf.math.argmax(logp, axis=2)  # Returns indexes where logp is max
+
       # SOFTMAX - 'soft' labels of the Gumbel samples, and their one-hot labels
-      u = tf.random_uniform(shape=outputs["one_hot_targets"].get_shape().as_list(), minval=0,
-                            maxval=1, dtype=tf.float32)
-      z = tf.math.add(-tf.log(-tf.log(u)), logp)
-      y_soft = tf.math.softmax(tf.div(z, 0.1))  # tau = 0.1
-      sample_y = tf.math.argmax(y_soft, axis=2)  # argmax along the vocab dimension
+      # u = tf.random_uniform(shape=outputs["one_hot_targets"].get_shape().as_list(),
+      #                       minval=0,
+      #                       maxval=1,
+      #                       dtype=tf.float32)
+      # z = tf.math.add(-tf.log(-tf.log(u)), logp)
+      # y_soft = tf.math.softmax(tf.div(z, temperature))
+      # sample_y = tf.math.argmax(y_soft, axis=2)  # REPLACED WITH b - do we use this, or b, for r1_score_soft?
 
-      # Decode text for ROUGE
-      decode_target_text_tensor = public_parsing_ops.decode(outputs["targets"],
-                                                            model_params.vocab_filename,
-                                                            model_params.encoder_type)
-      decode_target_text = decode_target_text_tensor[0]  # returned tensor in bytes format
+      ##### For RELAX implementation ################################################################################
+      # v = tf.random_uniform(shape=outputs["one_hot_targets"].get_shape().as_list(),
+      #                       minval=0,
+      #                       maxval=1,
+      #                       dtype=tf.float32)
+      # b = tf.stop_gradient(tf.math.argmax(z, axis=2))  # REPLACES sample_y
 
-      decode_preds_text_tensor_hard = public_parsing_ops.decode(argmax_logp_index,
-                                                                model_params.vocab_filename,
-                                                                model_params.encoder_type)
-      decode_preds_text_hard = decode_preds_text_tensor_hard[0]  # returned tensor in bytes format
+      # create z_tilde as the manipulation of v, and then adjust the values at the argmax b, to be the updated values
+      # z_tilde = -tf.log(-tf.div(tf.log(v), clipped_logit_probs) - tf.log(v))  # where i != b
+
+      # create index tensor where b is the argmax, to use as indexer for substition
+      # b_new = tf.reshape(b, [b.get_shape().as_list()[1]])
+      # index_tensor_b = tf.stack([batch_index, sequence_index, b_new], axis=1)
+
+      # v_b = tf.gather_nd(v, index_tensor_b)  # create v_b -> returns values of v where b are the argmax indexes
+      # update = -tf.log(-tf.log(v_b))
+
+      # def conversion(ref, indices, update):
+      # replace the values of z_tilde for each token in seq_len, where i == b with update
+      #     ref = tf.Variable(ref)
+      #     z_tilde = tf.scatter_nd_update(ref, indices, update)
+      #     return z_tilde
+      # z_tilde = tf.py_function(conversion, (z_tilde, index_tensor_b, update), tf.float32)  # updated z_tilde
+
+      # logit_theta = tf.gather_nd(logp, index_tensor_b)  # finds logit_theta: logp(b)
+
+      ##### DECODING + ROUGE LOSS ###################################################################################
+      # TARGET text
+      # decode_target_text_tensor = public_parsing_ops.decode(outputs["targets"], model_params.vocab_filename,
+      #                                                       model_params.encoder_type)
+      # decode_target_text = decode_target_text_tensor[0]  # returned tensor in bytes format
+
+      # ARGMAX text
+      # decode_preds_text_tensor_hard = public_parsing_ops.decode(argmax_logp_index, model_params.vocab_filename,
+      #                                                           model_params.encoder_type)
+      # decode_preds_text_hard = decode_preds_text_tensor_hard[0]  # returned tensor in bytes format
 
       # do not want to propagate the gradient through the ROUGE hook
-      decode_target_text = tf.stop_gradient(decode_target_text)
-      decode_preds_text_hard = tf.stop_gradient(decode_preds_text_hard)
+      # decode_target_text = tf.stop_gradient(decode_target_text)
+      # decode_preds_text_hard = tf.stop_gradient(decode_preds_text_hard)
 
-      # calculate ROUGE-1
-      r1_score_hard = tf.py_function(evaluate_r1, (decode_target_text, decode_preds_text_hard),
-                                     tf.float32)
+      # calculate ROUGE loss (argmax)
+      # r1_score_hard = tf.py_function(evaluate_r1, (decode_target_text, decode_preds_text_hard), tf.float32)
 
-      # Implement REINFORCE loss w/ ARGMAX
-      # Create index tensors to stack and get corresponding probabilities from logp
-      # argmax_logp_new = tf.reshape(argmax_logp_index, [argmax_logp_index.get_shape().as_list()[
-      # 1]])
-      sequence_index = tf.constant(np.arange(0, 32))  # DYNAMIC: seq_len, not 32
-      batch_index = tf.constant(np.zeros(sequence_index.get_shape().as_list()[0]), dtype=tf.int64)
+      # SOFTMAX text
+      # decode_preds_text_tensor_soft = public_parsing_ops.decode(sample_y, model_params.vocab_filename,
+      #                                                           model_params.encoder_type)
+      # decode_preds_text_soft = decode_preds_text_tensor_soft[0]
+      # decode_preds_text_soft = tf.stop_gradient(decode_preds_text_soft)
 
+      # calculate ROUGE loss (softmax)
+      # r1_score_soft = tf.py_function(evaluate_r1, (decode_target_text, decode_preds_text_soft), tf.float32)
+
+      ##### REINFORCE LOSS ##########################################################################################
+      # ARGMAX logp values
+      # argmax_logp_new = tf.reshape(argmax_logp_index, [argmax_logp_index.get_shape().as_list()[1]])
       # index_tensor_hard = tf.stack([batch_index, sequence_index, argmax_logp_new], axis=1)
       # argmax_logp = tf.gather_nd(logp, index_tensor_hard)  # finds log probs using hard indexing
 
-      # Implement REINFORCE loss w/ SOFTMAX
-      decode_preds_text_tensor_soft = public_parsing_ops.decode(sample_y,
-                                                                model_params.vocab_filename,
-                                                                model_params.encoder_type)
-      decode_preds_text_soft = decode_preds_text_tensor_soft[0]
-      decode_preds_text_soft = tf.stop_gradient(decode_preds_text_soft)
+      # SOFTMAX logp values
+      # sample_y_new = tf.reshape(sample_y, [sample_y.get_shape().as_list()[1]])
+      # index_tensor_soft = tf.stack([batch_index, sequence_index, sample_y_new], axis=1)
+      # softmax_logp = tf.gather_nd(logp, index_tensor_soft)  # finds log probs using soft indexing
 
-      r1_score_soft = tf.py_function(evaluate_r1, (decode_target_text, decode_preds_text_soft),
-                                     tf.float32)
-
-      sample_y_new = tf.reshape(sample_y, [sample_y.get_shape().as_list()[1]])
-      index_tensor_soft = tf.stack([batch_index, sequence_index, sample_y_new], axis=1)
-      softmax_logp = tf.gather_nd(logp, index_tensor_soft)  # finds log probs using soft indexing
-
-      # New LOSS calculation
       # weight the logp by ROUGE score, sum values, and invert sign (of logp)
       # soft_reinforce_loss = tf.reduce_sum(tf.multiply(r1_score_soft, -softmax_logp))
       # hard_reinforce_loss = tf.reduce_sum(tf.multiply(r1_score_hard, -argmax_logp))
 
+      ##### REINFORCE w/ BASELINE ###################################################################################
       # Socher (2017)
-      loss_difference = tf.subtract(r1_score_hard, r1_score_soft)
-      reinforce_baseline = tf.reduce_sum(tf.multiply(loss_difference, softmax_logp))
+      # loss_difference = tf.subtract(r1_score_hard, r1_score_soft)
+      # reinforce_baseline = tf.reduce_sum(tf.multiply(loss_difference, softmax_logp))
 
-      # combined_loss = tf.math.add(tf.multiply(tf.constant(0.8, dtype=tf.float32), XENT_loss),
-      #                             tf.multiply(tf.constant(0.2, dtype=tf.float32), reinforce_loss))
+      ##### MIXED LOSS ##############################################################################################
+      # combined_loss = tf.math.add(tf.multiply(tf.constant(0.6, dtype=tf.float32), XENT_loss),
+      #                             tf.multiply(tf.constant(0.4, dtype=tf.float32), hard_reinforce_loss))
 
-      # RELAX loss
+      # OR conditional loss switch
+      # constraint = tf.random_uniform(shape=(), minval=0, maxval=1, dtype=tf.float32)
+      # combined_loss = tf.cond(constraint > 0.8, lambda: hard_reinforce_loss, lambda: XENT_loss)
 
-      ##########################################################################################
+      ##### FFN LOSS ################################################################################################
+      # FFN baseline score - outputs["hidden_states"], outputs["context_memory"], outputs["context_bias"]
+      # ffn_output = ffn_baseline(outputs["hidden_states"], outputs["context_memory"])
 
-      # Accessing the gradient of loss
-      list_of_gradient_variable_pairs = optimizer.compute_gradients(reinforce_baseline)
-      train_op = optimizer.apply_gradients(list_of_gradient_variable_pairs,
-                                           global_step=global_step)
+      # loss_difference = tf.subtract(r1_score_soft, ffn_output)
+      # reinforce_baseline = tf.reduce_sum(tf.multiply(loss_difference, softmax_logp))
 
-      # train_op = optimizer.minimize(loss, global_step=global_step)
+      # constraint = tf.random_uniform(shape=(), minval=0, maxval=1, dtype=tf.float32)
+      # combined_loss = tf.cond(constraint > 0.8, lambda: reinforce_baseline, lambda: XENT_loss)
+
+      ##### RELAX LOSS ##############################################################################################
+      # Input z and z_tilde into NN
+      # c_z = control_variate(z)
+      # c_z_tilde = control_variate(z_tilde)
+
+      # Construct gradient estimator
+      # f_y = r1_score_soft  # rouge loss value of samples
+      # c_z_tilde  # defined above as the output of the NN with z_tilde as input
+      # d_logp_d_theta = tf.gradients(b, logit_theta)[0]
+      # d_c_z_tilde_d_theta = tf.gradients(c_z_tilde, logit_theta)[0]
+      # d_c_z_d_theta = tf.gradients(c_z, logit_theta)[0]
+
+      # Calculate the entire gradient estimator
+      # relax = (f_y - c_z_tilde)*d_logp_d_theta - d_c_z_tilde_d_theta + d_c_z_d_theta
+
+      # Variance reduction objective
+      # variance_loss = tf.reduce_mean(tf.square(relax))
+
+      # Calculate the normal optimization step
+      # list_of_gradient_variable_pairs = optimizer.compute_gradients(XENT_loss)
+      # TODO: check format of input to apply_gradients is appropriate
+      #  :either, extract grads and only pass to apply_grads, OR format relax to be in grad_vars list format
+      # train_op = optimizer.apply_gradients([0.4relax+0.6list_of_gradient_variable_pairs], global_step=global_step)
+
+      # initialise adafactor again for variance optimiser
+      # var_opt = adafactor.AdafactorOptimizer(
+      #           learning_rate=lr,
+      #           decay_rate=adafactor.adafactor_decay_rate_pow(0.8),
+      #           beta1=0.0)
+
+      # est_params = [eta, log_temperature]  # extra params for variance reduction
+
+      # Adds the parameters of the FFNN
+      # nn_params = [tv for tv in tf.trainable_variables() if "control_variate" in tv.name]
+      # est_params = est_params + nn_params
+
+      # Additional optimization step
+      # var_gradvars = var_opt.compute_gradients(variance_loss, var_list=est_params)
+      # var_train_op = var_opt.apply_gradients(var_gradvars)
+
+      # This may allow for both train ops to be passed in the return statement below?
+      # with tf.control_dependencies([train_op, var_train_op]):
+      #     train_op = tf.no_op()
+
+      ###############################################################################################################
+      # Calculate gradients
+      # If freezing layers, only optimise wrt certain layers (find names) - speeds up, worsens performance
+      # last_params = [tv for tv in tf.trainable_variables() if "decoder/LayerNorm/" in tv.name]
+      # list_of_gradient_variable_pairs = optimizer.compute_gradients(combined_loss, var_list=last_params)
+      list_of_gradient_variable_pairs = optimizer.compute_gradients(XENT_loss)
+      train_op = optimizer.apply_gradients(list_of_gradient_variable_pairs, global_step=global_step)
 
       tf.logging.set_verbosity(tf.logging.INFO)
       # Debugging steps - add into logging hook directly if needed
       # tf.debugging.check_numerics(sum_logp, "DEBUG: sum_logp has a NaN")
 
-      logging_hook = tf.train.LoggingTensorHook({"loss": reinforce_baseline,  # or loss
+      logging_hook = tf.train.LoggingTensorHook({"loss": XENT_loss,  # or loss
                                                  "learning_rate": lr,
+                                                 "global_step": global_step,
+                                                 # "vb": v_b,
+                                                 # "update": update,
+                                                 # "z_tilde": z_tilde,
+                                                 # "logit_theta": logit_theta,
+                                                 # "log_temperature": log_temperature,
+                                                 # "ffn_loss": ffn_loss,
+                                                 # "ffn_output": ffn_output,
                                                  # "hard_reinforce_loss": hard_reinforce_loss,
                                                  # "soft_reinforce_loss": soft_reinforce_loss,
-                                                 "XENT_loss": XENT_loss,
-                                                 "target_text": decode_target_text,
-                                                 "soft_preds_text": decode_preds_text_soft,
-                                                 "hard_preds_text": decode_preds_text_hard,
-                                                 "hard_rouge_score": r1_score_hard,
-                                                 "soft_rouge_score": r1_score_soft
+                                                 # "target_text": decode_target_text,
+                                                 # "soft_preds_text": decode_preds_text_soft,
+                                                 # "hard_preds_text": decode_preds_text_hard,
+                                                 # "hard_rouge_score": r1_score_hard,
+                                                 # "soft_rouge_score": r1_score_soft
                                                  }, every_n_iter=5)
 
       # This is the configured estimator function that is returned to train the model
       return tpu_estimator.TPUEstimatorSpec(
           mode=mode,
-          loss=reinforce_baseline,  # change loss here
+          loss=XENT_loss,
           train_op=train_op,
           training_hooks=[logging_hook],
           scaffold_fn=_load_vars_from_checkpoint(use_tpu,

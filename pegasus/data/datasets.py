@@ -155,7 +155,7 @@ class TFDSDataset(BaseDataset):
         split=split,
         with_info=True,
         shuffle_files=shuffle_files,
-        data_dir=self.data_dir)
+        data_dir="/data/jsparnel/tensorflow_datasets/")
     num_examples = self.num_examples or info.splits[split].num_examples
     return dataset, num_examples
 
