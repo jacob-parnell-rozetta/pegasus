@@ -284,13 +284,14 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # d_c_z_tilde_d_theta = tf.gradients(c_z_tilde, theta)[0]
       # d_c_z_d_theta = tf.gradients(c_z, theta)[0]
 
+      # Calculate the entire gradient estimator
+      # relax = (f_y - c_z_tilde)*d_logp_d_theta - d_c_z_tilde_d_theta + d_c_z_d_theta
+
       # DEBUG: print shapes of gradients
       # print(d_logp_d_theta)
       # print(d_c_z_tilde_d_theta)
       # print(d_c_z_d_theta)
-
-      # Calculate the entire gradient estimator
-      # relax = (f_y - c_z_tilde)*d_logp_d_theta - d_c_z_tilde_d_theta + d_c_z_d_theta
+      # print(relax)
 
       # Calculate the normal optimization step
       # list_of_gradient_variable_pairs = optimizer.compute_gradients(XENT_loss)
