@@ -146,10 +146,10 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       ###############################################################################################################
       ##### VARIABLES ###############################################################################################
       # REBAR/RELAX variables - need to change the range(.) value -> num_latents?
-      # eta = tf.Variable([1.0 for i in range(1)], trainable=True, name='eta', dtype=tf.float32)
-      # log_temperature = tf.Variable([np.log(0.1) for i in range(1)], trainable=True, name='log_temperature',
-      #                               dtype=tf.float32)
-      # temperature = tf.exp(log_temperature)
+      # eta = tf.Variable([1.0 for i in range(1)], trainable=True, name='control_variate/eta', dtype=tf.float32)
+      # log_temperature = tf.Variable([np.log(0.1) for i in range(1)], trainable=True,
+      #                               name='control_variate/log_temperature', dtype=tf.float32)
+      # temperature = tf.exp(log_temperature)  # TODO: is this used elsewhere besides y_soft? Will remain 0.1
 
       # Create index tensors to stack and get corresponding probabilities from logp
       # sequence_index = tf.constant(np.arange(0, outputs["targets"].get_shape().as_list()[1]))
@@ -166,7 +166,7 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
 
       # SOFTMAX - 'soft' labels of the Gumbel samples, and their one-hot labels
       # u = tf.random_uniform(shape=outputs["one_hot_targets"].get_shape().as_list(),
-      #                       minval=0,
+      #                       minval=1e-8,
       #                       maxval=1,
       #                       dtype=tf.float32)
       # z = tf.math.add(-tf.log(-tf.log(u)), logp)
@@ -175,7 +175,7 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
 
       ##### For RELAX implementation ################################################################################
       # v = tf.random_uniform(shape=outputs["one_hot_targets"].get_shape().as_list(),
-      #                       minval=0,
+      #                       minval=1e-8,
       #                       maxval=1,
       #                       dtype=tf.float32)
       # b = tf.stop_gradient(tf.math.argmax(z, axis=2))  # REPLACES sample_y
@@ -190,6 +190,7 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # v_b = tf.gather_nd(v, index_tensor_b)  # create v_b -> returns values of v where b are the argmax indexes
       # update = -tf.log(-tf.log(v_b))
 
+      # TODO: Take out of EagerTensor function if possible
       # def conversion(ref, indices, update):
       # replace the values of z_tilde for each token in seq_len, where i == b with update
       #     ref = tf.Variable(ref)
@@ -197,7 +198,7 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       #     return z_tilde
       # z_tilde = tf.py_function(conversion, (z_tilde, index_tensor_b, update), tf.float32)  # updated z_tilde
 
-      # logit_theta = tf.gather_nd(logp, index_tensor_b)  # finds logit_theta: logp(b)
+      # logit_theta = tf.gather_nd(logp, index_tensor_b)  # finds logit_theta: logp(b) where b = argmax(z)
 
       ##### DECODING + ROUGE LOSS ###################################################################################
       # TARGET text
@@ -217,8 +218,8 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # calculate ROUGE loss (argmax)
       # r1_score_hard = tf.py_function(evaluate_r1, (decode_target_text, decode_preds_text_hard), tf.float32)
 
-      # SOFTMAX text
-      # decode_preds_text_tensor_soft = public_parsing_ops.decode(sample_y, model_params.vocab_filename,
+      # SOFTMAX text - samply_y and b are interchangeable
+      # decode_preds_text_tensor_soft = public_parsing_ops.decode(b, model_params.vocab_filename,
       #                                                           model_params.encoder_type)
       # decode_preds_text_soft = decode_preds_text_tensor_soft[0]
       # decode_preds_text_soft = tf.stop_gradient(decode_preds_text_soft)
@@ -265,28 +266,41 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # combined_loss = tf.cond(constraint > 0.8, lambda: reinforce_baseline, lambda: XENT_loss)
 
       ##### RELAX LOSS ##############################################################################################
+      # Testing RELAX Q_func
+      # from pegasus.models.control_variate import Q_func
+      # with tf.variable_scope("Q_func"):
+      #     c_z = Q_func(z)[:, 0, 0]  # change this to get a scalar or otherwise
+      # with tf.variable_scope("Q_func", reuse=True):
+      #     c_z_tilde = Q_func(z_tilde)[:, 0, 0]  # change this to get a scalar or otherwise
+
       # Input z and z_tilde into NN
       # c_z = control_variate(z)
       # c_z_tilde = control_variate(z_tilde)
 
       # Construct gradient estimator
       # f_y = r1_score_soft  # rouge loss value of samples
-      # c_z_tilde  # defined above as the output of the NN with z_tilde as input
-      # d_logp_d_theta = tf.gradients(b, logit_theta)[0]
-      # d_c_z_tilde_d_theta = tf.gradients(c_z_tilde, logit_theta)[0]
-      # d_c_z_d_theta = tf.gradients(c_z, logit_theta)[0]
+      # theta = [tv for tv in tf.trainable_variables() if "control_variate" not in tv.name]
+      # d_logp_d_theta = tf.gradients(logit_theta, theta)[0]
+      # d_c_z_tilde_d_theta = tf.gradients(c_z_tilde, theta)[0]
+      # d_c_z_d_theta = tf.gradients(c_z, theta)[0]
+
+      # DEBUG: print shapes of gradients
+      # print(d_logp_d_theta)
+      # print(d_c_z_tilde_d_theta)
+      # print(d_c_z_d_theta)
 
       # Calculate the entire gradient estimator
       # relax = (f_y - c_z_tilde)*d_logp_d_theta - d_c_z_tilde_d_theta + d_c_z_d_theta
 
-      # Variance reduction objective
-      # variance_loss = tf.reduce_mean(tf.square(relax))
-
       # Calculate the normal optimization step
       # list_of_gradient_variable_pairs = optimizer.compute_gradients(XENT_loss)
-      # TODO: check format of input to apply_gradients is appropriate
-      #  :either, extract grads and only pass to apply_grads, OR format relax to be in grad_vars list format
+      # TODO: check format of input to apply_gradients is appropriate, either:
+      #  1. extract grads and only pass to apply_grads
+      #  2. format relax to be in grad_vars list format
       # train_op = optimizer.apply_gradients([0.4relax+0.6list_of_gradient_variable_pairs], global_step=global_step)
+
+      # Variance reduction objective
+      # variance_loss = tf.reduce_mean(tf.square(relax))
 
       # initialise adafactor again for variance optimiser
       # var_opt = adafactor.AdafactorOptimizer(
@@ -310,9 +324,11 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
 
       ###############################################################################################################
       # Calculate gradients
+
       # If freezing layers, only optimise wrt certain layers (find names) - speeds up, worsens performance
       # last_params = [tv for tv in tf.trainable_variables() if "decoder/LayerNorm/" in tv.name]
       # list_of_gradient_variable_pairs = optimizer.compute_gradients(combined_loss, var_list=last_params)
+
       list_of_gradient_variable_pairs = optimizer.compute_gradients(XENT_loss)
       train_op = optimizer.apply_gradients(list_of_gradient_variable_pairs, global_step=global_step)
 
@@ -323,8 +339,15 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       logging_hook = tf.train.LoggingTensorHook({"loss": XENT_loss,  # or loss
                                                  "learning_rate": lr,
                                                  "global_step": global_step,
+                                                 # "error1": tf.debugging.check_numerics(z_tilde,
+                                                 #                                       "DEBUG: z_tilde has bad num"),
+                                                 # "c_z": c_z,
+                                                 # "c_z_tilde": c_z_tilde,
+                                                 # "f_y": f_y,
+                                                 # "relax": relax,
                                                  # "vb": v_b,
                                                  # "update": update,
+                                                 # "z": z,
                                                  # "z_tilde": z_tilde,
                                                  # "logit_theta": logit_theta,
                                                  # "log_temperature": log_temperature,
