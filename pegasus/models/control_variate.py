@@ -41,8 +41,7 @@ def ffn_baseline(inputs, ground_truth):
 
 
 def control_variate(input):
-    # TODO: runs into an error for z_tilde (unknown shape) - due to calculation as EagerTensor
-    ffn_input_size = 96103  # input.get_shape().as_list()[2]
+    ffn_input_size = input.get_shape().as_list()[2]
     hidden1_size = 128
     ffn_output_size = 1
 

@@ -267,7 +267,7 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # Formulate RELAX as a loss function
       # f_y = r1_score_soft  # TODO: convert to not-EagerTensor via pyFunc?
       # c_z_tilde1 = tf.stop_gradient(tf.identity(c_z_tilde))
-      # L_relax = tf.reduce_sum((f_y - c_z_tilde1)*logit_theta) - c_z_tilde + c_z  # TODO: reduce_sum?
+      # L_relax = tf.reduce_sum((f_y - c_z_tilde1)*logit_theta) - c_z_tilde + c_z  # TODO: reduce_sum OR reduce_mean
 
       # OR construct gradient estimator
       # f_y = r1_score_soft  # rouge loss value of samples
@@ -282,7 +282,9 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # list_of_gradient_variable_pairs = optimizer.compute_gradients(L_relax)
       # train_op = optimizer.apply_gradients(list_of_gradient_variable_pairs, global_step=global_step)
 
-      # Variance reduction objective  # TODO: extract grads from opt.compute_grads(L_relax)
+      # Variance reduction objective
+      # TODO: extract grads from opt.compute_grads(L_relax) OR re-calculate grads manually
+      # relax_grads = [i[0] for i in list_of_gradient_variable_pairs]
       # variance_loss = tf.reduce_mean(tf.square(relax))
 
       # initialise adafactor again for variance optimiser
@@ -319,17 +321,15 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # Debugging steps - add into logging hook directly if needed
       # tf.debugging.check_numerics(sum_logp, "DEBUG: sum_logp has a NaN")
 
-      logging_hook = tf.train.LoggingTensorHook({"loss": XENT_loss,  # or loss
+      logging_hook = tf.train.LoggingTensorHook({"loss": XENT_loss,
+                                                 # "variance_loss": variance_loss,
                                                  "learning_rate": lr,
                                                  "global_step": global_step,
-                                                 # "error1": tf.debugging.check_numerics(z_tilde,
-                                                 #                                       "DEBUG: z_tilde has bad num"),
-                                                 # "shape_relax": tf.shape(relax),
                                                  # "c_z": c_z,
                                                  # "c_z_tilde": c_z_tilde,
                                                  # "f_y": f_y,
                                                  # "relax": relax,
-                                                 # "shape_relax": tf.shape(relax),
+                                                 # "b": b,
                                                  # "vb": v_b,
                                                  # "update": update,
                                                  # "z": z,
