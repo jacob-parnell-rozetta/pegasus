@@ -67,6 +67,7 @@ def control_variate(input):
 
 
 def Q_func(z):
-    h1 = tf.layers.dense(2. * z - 1., 128, tf.nn.tanh, name="q_1", use_bias=True)
+    h1 = tf.layers.dense(2. * z - 1., 64, tf.nn.tanh, name="q_1", use_bias=True)  # 64, and ELU in paper
+    # h2 = tf.layers.dense(h1, 10, tf.nn.relu, name="q_2", use_bias=True)
     out = tf.layers.dense(h1, 1, name="q_out", use_bias=True)
-    return out
+    return tf.reduce_mean(out)

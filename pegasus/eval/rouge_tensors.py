@@ -14,7 +14,8 @@ def evaluate_r1(tensor1, tensor2):
     r_score_f1 = {el: 0 for el in list(r_score.keys())}  # set empty rouge dict
     r_score_f1.update({_ROUGE_METRIC: list(r_score[_ROUGE_METRIC])[2]})  # find F1 metric only
 
-    return tf.Variable([[r_score_f1[_ROUGE_METRIC]]]).read_value()
+    tensor_result = tf.Variable(r_score_f1[_ROUGE_METRIC], shape=()).read_value()
+    return tensor_result
 
 
 def evaluate_r2(tensor1, tensor2):
@@ -29,7 +30,8 @@ def evaluate_r2(tensor1, tensor2):
     r_score_f1 = {el: 0 for el in list(r_score.keys())}  # set empty rouge dict
     r_score_f1.update({_ROUGE_METRIC: list(r_score[_ROUGE_METRIC])[2]})  # find F1 metric only
 
-    return tf.Variable([[r_score_f1[_ROUGE_METRIC]]]).read_value()
+    tensor_result = tf.Variable(r_score_f1[_ROUGE_METRIC], shape=()).read_value()
+    return tensor_result
 
 
 def evaluate_rl(tensor1, tensor2):
@@ -44,4 +46,5 @@ def evaluate_rl(tensor1, tensor2):
     r_score_f1 = {el: 0 for el in list(r_score.keys())}  # set empty rouge dict
     r_score_f1.update({_ROUGE_METRIC: list(r_score[_ROUGE_METRIC])[2]})  # find F1 metric only
 
-    return tf.Variable([[r_score_f1[_ROUGE_METRIC]]]).read_value()
+    tensor_result = tf.Variable(r_score_f1[_ROUGE_METRIC], shape=()).read_value()
+    return tensor_result
