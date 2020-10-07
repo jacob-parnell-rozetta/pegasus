@@ -146,9 +146,9 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       ###############################################################################################################
       ##### VARIABLES ###############################################################################################
       # REBAR/RELAX variables - need to change the range(.) value -> num_latents?
-      # eta = tf.Variable([1.0 for i in range(1)], trainable=True, name='control_variate/eta', dtype=tf.float32)
+      # eta = tf.Variable([1.0 for i in range(1)], trainable=True, name='Q_func/eta', dtype=tf.float32)
       # log_temperature = tf.Variable([np.log(0.1) for i in range(1)], trainable=True,
-      #                               name='control_variate/log_temperature', dtype=tf.float32)
+      #                               name='Q_func/log_temperature', dtype=tf.float32)
       # temperature = tf.exp(log_temperature)
 
       # Create index tensors to stack and get corresponding probabilities from logp
@@ -205,7 +205,7 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       #                                                           model_params.encoder_type)
       # decode_preds_text_hard = tf.stop_gradient(decode_preds_text_tensor_hard[0])  # returned tensor in bytes format
 
-      # calculate ROUGE loss (argmax)  # TODO: take out of py_func?
+      # calculate ROUGE loss (argmax)
       # r1_score_hard = tf.py_function(evaluate_r1, (decode_target_text, decode_preds_text_hard), tf.float32)
 
       # SOFTMAX text - samply_y and b are interchangeable
@@ -213,7 +213,7 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       #                                                           model_params.encoder_type)
       # decode_preds_text_soft = tf.stop_gradient(decode_preds_text_tensor_soft[0])
 
-      # calculate ROUGE loss (softmax)  # TODO: take out of py_func?
+      # calculate ROUGE loss (softmax)
       # r1_score_soft = tf.py_function(evaluate_r1, (decode_target_text, decode_preds_text_soft), tf.float32)
 
       ##### REINFORCE LOSS ##########################################################################################
@@ -254,25 +254,26 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # combined_loss = tf.cond(constraint > 0.8, lambda: reinforce_baseline, lambda: XENT_loss)
 
       ##### RELAX LOSS ##############################################################################################
-      # Testing RELAX Q_func
+      # RELAX Q_func
       # with tf.variable_scope("Q_func"):
-      #     c_z = Q_func(z)[:, 0, 0]  # change this to get a scalar or otherwise
+      #     c_z = Q_func(z)  #[:, 0, 0]  # change this to get a scalar or otherwise
+      #     print(tf.shape(c_z))
       # with tf.variable_scope("Q_func", reuse=True):
-      #     c_z_tilde = Q_func(z_tilde)[:, 0, 0]  # change this to get a scalar or otherwise
+      #     c_z_tilde = Q_func(z_tilde)  #[:, 0, 0]  # change this to get a scalar or otherwise
+      #     print(tf.shape(c_z_tilde))
 
-      # Input z and z_tilde into NN
+      # Our NN implementation
       # c_z = control_variate(z)
       # c_z_tilde = control_variate(z_tilde)
 
       # Formulate RELAX as a loss function
-      # f_y = r1_score_soft  # TODO: convert to not-EagerTensor via pyFunc?
+      # f_y = r1_score_soft
       # c_z_tilde1 = tf.stop_gradient(tf.identity(c_z_tilde))
-      # L_relax = tf.reduce_sum((f_y - c_z_tilde1)*logit_theta) - c_z_tilde + c_z  # TODO: reduce_sum OR reduce_mean
+      # L_relax = tf.reduce_sum((f_y - c_z_tilde1)*logit_theta) - c_z_tilde + c_z  # logit_theta OR argmax_logp
 
       # OR construct gradient estimator
-      # f_y = r1_score_soft  # rouge loss value of samples
-      # theta = [tv for tv in tf.trainable_variables() if "control_variate" not in tv.name]
-      # d_logp_d_theta = tf.gradients(logit_theta, theta)[0]
+      # theta = [tv for tv in tf.trainable_variables() if "Q_func" not in tv.name]
+      # d_logp_d_theta = tf.gradients(logit_theta, theta)[0]  # logit_theta OR argmax_logp
       # d_c_z_tilde_d_theta = tf.gradients(c_z_tilde, theta)[0]
       # d_c_z_d_theta = tf.gradients(c_z, theta)[0]
 
@@ -296,7 +297,7 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # est_params = [eta, log_temperature]  # extra params for variance reduction
 
       # Adds the parameters of the FFNN
-      # nn_params = [tv for tv in tf.trainable_variables() if "control_variate" in tv.name]
+      # nn_params = [tv for tv in tf.trainable_variables() if "Q_func" in tv.name]
       # est_params = est_params + nn_params
 
       # Additional optimization step
