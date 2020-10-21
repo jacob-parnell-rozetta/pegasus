@@ -204,7 +204,7 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # r1_score_hard = -tf.py_function(evaluate_r1, (decode_target_text, decode_preds_text_hard), tf.float32)
 
       # SOFTMAX text - samply_y and b are interchangeable
-      # decode_preds_text_tensor_soft = public_parsing_ops.decode(b, model_params.vocab_filename,
+      # decode_preds_text_tensor_soft = public_parsing_ops.decode(sample_y, model_params.vocab_filename,
       #                                                           model_params.encoder_type)
       # decode_preds_text_soft = tf.stop_gradient(decode_preds_text_tensor_soft[0])
 
@@ -228,15 +228,23 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
 
       ##### REINFORCE w/ BASELINE ###################################################################################
       # Socher (2017)
-      # hard_loss_difference = tf.subtract(r1_score_hard, r1_score_soft)
-      # hard_reinforce_baseline = tf.reduce_sum(tf.multiply(loss_difference, softmax_logp))
-
+      # [rouge_loss(y_soft) - rouge_loss(y_hard)] * logp(y_soft)
       # soft_loss_difference = tf.subtract(r1_score_soft, r1_score_hard)
-      # soft_reinforce_baseline = tf.reduce_sum(tf.multiply(loss_difference, argmax_logp))
+      # soft_reinforce_baseline = tf.reduce_sum(tf.multiply(soft_loss_difference, softmax_logp))
+
+      # [rouge_loss(y_hard) - rouge_loss(y_soft)] * logp(y_hard)
+      # hard_loss_difference = tf.subtract(r1_score_hard, r1_score_soft)
+      # hard_reinforce_baseline = tf.reduce_sum(tf.multiply(loss_difference, argmax_logp))
+
+      ##### NEW REINFORCE LOSS ######################################################################################
+      # we take output of ROUGE score as ROUGE_loss = -ROUGE score
+      # test [0.5 - ROUGE_score(y)]*logp(y)
+      # hard_intermediate_loss = tf.reduce_sum(tf.multiply(tf.math.subtract(0.5, -r1_score_hard), argmax_logp))
+      # soft_intermediate_loss = tf.reduce_sum(tf.multiply(tf.math.subtract(0.5, -r1_score_soft), softmax_logp))
 
       ##### MIXED LOSS ##############################################################################################
-      # combined_loss = tf.math.add(tf.multiply(tf.constant(0.6, dtype=tf.float32), XENT_loss),
-      #                             tf.multiply(tf.constant(0.4, dtype=tf.float32), hard_reinforce_loss))
+      # combined_loss = tf.math.add(tf.multiply(tf.constant(0.7, dtype=tf.float32), XENT_loss),
+      #                             tf.multiply(tf.constant(0.3, dtype=tf.float32), hard_intermediate_loss))
 
       # OR conditional loss switch
       # constraint = tf.random_uniform(shape=(), minval=0, maxval=1, dtype=tf.float32)
@@ -333,8 +341,11 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
           training_hooks=[logging_hook],
           scaffold_fn=_load_vars_from_checkpoint(use_tpu,
                                                  train_init_checkpoint),
-          host_call=add_scalars_to_summary(model_dir, {"learning_rate": lr}))  # , "rouge_loss": f_y,
-                                                       # "reinforce_loss": hard_reinforce_loss, "XENT_loss": XENT_loss,
+          host_call=add_scalars_to_summary(model_dir, {"learning_rate": lr,}))
+                                                       # "rouge_loss_hard": r1_score_hard,
+                                                       # "rouge_loss_soft": r1_score_soft,
+                                                       # "reinforce_loss": hard_intermediate_loss,
+                                                       # "XENT_loss": XENT_loss,}))
                                                        # "c_z": c_z, "c_z_tilde": c_z_tilde}))
 
     # EVALUATION (evaluating the performance)
