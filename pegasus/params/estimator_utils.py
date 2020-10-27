@@ -166,7 +166,7 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # z = tf.math.add(-tf.log(-tf.log(u)), logp)
 
       # use y_soft and sample_y for REINFORCE -> RELAX uses b = H(z)
-      # y_soft = tf.math.softmax(tf.div(z, temperature))  # this is Gumbel-Softmax; low temp -> approaches argmax
+      # y_soft = tf.math.softmax(tf.div(z, 0.1))  # this is Gumbel-Softmax; low temp -> approaches argmax
       # sample_y = tf.math.argmax(y_soft, axis=2)
 
       ##### RELAX VARIABLES ################################################################################
@@ -200,16 +200,18 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       #                                                           model_params.encoder_type)
       # decode_preds_text_hard = tf.stop_gradient(decode_preds_text_tensor_hard[0])
 
+      # NOTE: for ROUGE variant, change value (0: precision, 1: recall, 2: f1)
       # calculate ROUGE score (argmax) -> ROUGE loss = -ROUGE score
-      # r1_score_hard = -tf.py_function(evaluate_r1, (decode_target_text, decode_preds_text_hard), tf.float32)
+      # r1_score_hard = -tf.py_function(evaluate_rl, (decode_target_text, decode_preds_text_hard, 2), tf.float32)
 
       # SOFTMAX text - samply_y and b are interchangeable
       # decode_preds_text_tensor_soft = public_parsing_ops.decode(sample_y, model_params.vocab_filename,
       #                                                           model_params.encoder_type)
       # decode_preds_text_soft = tf.stop_gradient(decode_preds_text_tensor_soft[0])
 
+      # NOTE: for ROUGE variant, change value (0: precision, 1: recall, 2: f1)
       # calculate ROUGE loss (softmax) -> ROUGE loss = -ROUGE score
-      # r1_score_soft = -tf.py_function(evaluate_r1, (decode_target_text, decode_preds_text_soft), tf.float32)
+      # r1_score_soft = -tf.py_function(evaluate_rl, (decode_target_text, decode_preds_text_soft, 2), tf.float32)
 
       ##### REINFORCE LOSS ##########################################################################################
       # ARGMAX -> logp(argmax(y))
@@ -228,23 +230,22 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
 
       ##### REINFORCE w/ BASELINE ###################################################################################
       # Socher (2017)
-      # [rouge_loss(y_soft) - rouge_loss(y_hard)] * logp(y_soft)
+      # improve the probs of the SOFT labels
       # soft_loss_difference = tf.subtract(r1_score_soft, r1_score_hard)
       # soft_reinforce_baseline = tf.reduce_sum(tf.multiply(soft_loss_difference, softmax_logp))
 
-      # [rouge_loss(y_hard) - rouge_loss(y_soft)] * logp(y_hard)
+      # improve the probs of the HARD labels
       # hard_loss_difference = tf.subtract(r1_score_hard, r1_score_soft)
       # hard_reinforce_baseline = tf.reduce_sum(tf.multiply(loss_difference, argmax_logp))
 
       ##### NEW REINFORCE LOSS ######################################################################################
       # we take output of ROUGE score as ROUGE_loss = -ROUGE score
-      # test [0.5 - ROUGE_score(y)]*logp(y)
-      # hard_intermediate_loss = tf.reduce_sum(tf.multiply(tf.math.subtract(0.5, -r1_score_hard), argmax_logp))
-      # soft_intermediate_loss = tf.reduce_sum(tf.multiply(tf.math.subtract(0.5, -r1_score_soft), softmax_logp))
+      # hard_intermediate_loss = tf.reduce_sum(tf.multiply(tf.subtract(0.3, -r1_score_hard), argmax_logp))
+      # soft_intermediate_loss = tf.reduce_sum(tf.multiply(tf.subtract(0.5, -r1_score_soft), softmax_logp))
 
       ##### MIXED LOSS ##############################################################################################
-      # combined_loss = tf.math.add(tf.multiply(tf.constant(0.7, dtype=tf.float32), XENT_loss),
-      #                             tf.multiply(tf.constant(0.3, dtype=tf.float32), hard_intermediate_loss))
+      # combined_loss = tf.math.add(tf.multiply(tf.constant(0.1, dtype=tf.float32), XENT_loss),
+      #                             tf.multiply(tf.constant(0.99, dtype=tf.float32), soft_reinforce_baseline))
 
       # OR conditional loss switch
       # constraint = tf.random_uniform(shape=(), minval=0, maxval=1, dtype=tf.float32)
@@ -285,8 +286,7 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # train_op = optimizer.apply_gradients(list_of_gradient_variable_pairs, global_step=global_step)
 
       # Variance reduction objective
-      # TODO: extract grads from opt.compute_grads(L_relax) OR re-calculate grads manually
-      # relax_grads = [i[0] for i in list_of_gradient_variable_pairs]
+      # relax_grads = [i[0] for i in list_of_gradient_variable_pairs]  # TODO: extraction does not work
       # variance_loss = tf.reduce_mean(tf.square(relax), name="variance_loss")
 
       # initialise adafactor again for variance optimiser
@@ -341,12 +341,13 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
           training_hooks=[logging_hook],
           scaffold_fn=_load_vars_from_checkpoint(use_tpu,
                                                  train_init_checkpoint),
-          host_call=add_scalars_to_summary(model_dir, {"learning_rate": lr,}))
+          host_call=add_scalars_to_summary(model_dir, {"learning_rate": lr,
                                                        # "rouge_loss_hard": r1_score_hard,
                                                        # "rouge_loss_soft": r1_score_soft,
-                                                       # "reinforce_loss": hard_intermediate_loss,
-                                                       # "XENT_loss": XENT_loss,}))
-                                                       # "c_z": c_z, "c_z_tilde": c_z_tilde}))
+                                                       # "reinforce_loss": soft_reinforce_baseline,
+                                                       # "XENT_loss": XENT_loss,
+                                                       # "c_z": c_z, "c_z_tilde": c_z_tilde
+                                                       }))
 
     # EVALUATION (evaluating the performance)
     if mode == tf.estimator.ModeKeys.EVAL:
