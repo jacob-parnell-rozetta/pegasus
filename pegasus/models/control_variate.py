@@ -67,8 +67,8 @@ def control_variate(input):
 
 
 def Q_func(z):
-    h1 = tf.layers.dense(2. * z - 1., 64, tf.nn.tanh, name="q_1", use_bias=True)
+    h1 = tf.layers.dense(2. * z - 1., 64, tf.nn.relu, name="q_1", use_bias=True)  # change units
     # h2 = tf.layers.dense(h1, 10, tf.nn.relu, name="q_2", use_bias=True)
     out = tf.layers.dense(h1, 1, name="q_out", use_bias=True)
-    out = tf.nn.softmax(out)  # or sigmoid?
-    return tf.reduce_mean(out)  # should this mimic ROUGE score, or ROUGE loss? (+/-)
+    out = tf.nn.sigmoid(out)
+    return -tf.reduce_mean(out)
