@@ -66,9 +66,10 @@ def control_variate(input):
     return control_variate_output
 
 
-def Q_func(z):
-    h1 = tf.layers.dense(2. * z - 1., 64, tf.nn.relu, name="q_1", use_bias=True)  # change units
+def Q_func(z, target):
+    combined = tf.concat([z, target], axis=1)  # concat([BxTxV, BxTxV], 1) -> [Bx2Tx2V]
+    h1 = tf.layers.dense(2. * combined - 1., 128, tf.nn.relu, name="q_1", use_bias=True)
     # h2 = tf.layers.dense(h1, 10, tf.nn.relu, name="q_2", use_bias=True)
     out = tf.layers.dense(h1, 1, name="q_out", use_bias=True)
-    out = tf.nn.sigmoid(out)
-    return -tf.reduce_mean(out)
+    out = -tf.nn.sigmoid(out)  # sigmoid for normalisation, minus for correct range
+    return out

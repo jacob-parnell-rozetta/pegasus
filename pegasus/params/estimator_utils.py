@@ -260,13 +260,22 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # constraint = tf.random_uniform(shape=(), minval=0, maxval=1, dtype=tf.float32)
       # combined_loss = tf.cond(constraint > 0.8, lambda: reinforce_baseline, lambda: XENT_loss)
 
+      ##### RELAX CONTROL VARIATE ###################################################################################
+      # Here we need to convert the IDs from the target, to the probabilities for ROUGE mimic
+      # TODO: probabilities from z or from logp?
+      # target_id_cv = tf.reshape(outputs['targets'], [outputs['targets'].get_shape().as_list()[1]])
+      # index_tensor_targets = tf.stack([batch_index, sequence_index, target_id_cv], axis=1)
+
+      # target_probs_cv_z = tf.gather_nd(z, index_tensor_target)  # finds log probs using targets indexing
+      # target_probs_cv_ztilde = tf.gather_nd(z_tilde, index_tensor_target)  # finds log probs using targets indexing
+
       ##### RELAX LOSS ##############################################################################################
       # RELAX Q_func
       # with tf.variable_scope("Q_func"):
-      #     c_z = Q_func(z)
+      #     c_z = Q_func(z, target_probs_cv_z)
 
       # with tf.variable_scope("Q_func", reuse=True):
-      #     c_z_tilde = Q_func(z_tilde)
+      #     c_z_tilde = Q_func(z_tilde, target_probs_cv_ztilde)
 
       # Formulate RELAX as a loss function
       # f_y = r1_score_soft  # negative for loss (defined above)
