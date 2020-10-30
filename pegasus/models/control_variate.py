@@ -72,4 +72,5 @@ def Q_func(z, target):
     # h2 = tf.layers.dense(h1, 10, tf.nn.relu, name="q_2", use_bias=True)
     out = tf.layers.dense(h1, 1, name="q_out", use_bias=True)
     out = -tf.nn.sigmoid(out)  # sigmoid for normalisation, minus for correct range
+    out = tf.reduce_mean(out)
     return out
