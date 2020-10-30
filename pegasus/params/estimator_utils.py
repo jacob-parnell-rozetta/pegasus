@@ -146,54 +146,54 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       ###############################################################################################################
       ##### VARIABLES ###############################################################################################
       # Create index tensors to stack and get corresponding probabilities from logp
-      sequence_index = tf.constant(np.arange(0, outputs["targets"].get_shape().as_list()[1]))
-      batch_index = tf.constant(np.zeros(sequence_index.get_shape().as_list()[0]), dtype=tf.int64)
+      # sequence_index = tf.constant(np.arange(0, outputs["targets"].get_shape().as_list()[1]))
+      # batch_index = tf.constant(np.zeros(sequence_index.get_shape().as_list()[0]), dtype=tf.int64)
 
       ##### SAMPLING ################################################################################################
       # Normalise logits to log-prob, and compute Gumbel samples with location
-      logit_probs = tf.math.softmax(outputs["logits"])  # should not be x <= 0
-      clipped_logit_probs = tf.clip_by_value(logit_probs, 1e-8, 1.0)
-      logp = tf.log(clipped_logit_probs)
+      # logit_probs = tf.math.softmax(outputs["logits"])  # should not be x <= 0
+      # clipped_logit_probs = tf.clip_by_value(logit_probs, 1e-8, 1.0)
+      # logp = tf.log(clipped_logit_probs)
 
       # SAMPLING W/ ARGMAX
-      argmax_logp_index = tf.math.argmax(logp, axis=2)  # Returns indexes where logp is max
+      # argmax_logp_index = tf.math.argmax(logp, axis=2)  # Returns indexes where logp is max
 
       # SAMPLING W/ SOFTMAX - 'soft' labels of the Gumbel samples, and their one-hot labels
-      u = tf.random_uniform(shape=outputs["one_hot_targets"].get_shape().as_list(),
-                            minval=1e-8,
-                            maxval=1,
-                            dtype=tf.float32)
-      z = tf.math.add(-tf.log(-tf.log(u)), logp)
+      # u = tf.random_uniform(shape=outputs["one_hot_targets"].get_shape().as_list(),
+      #                       minval=1e-8,
+      #                       maxval=1,
+      #                       dtype=tf.float32)
+      # z = tf.math.add(-tf.log(-tf.log(u)), logp)
 
       # use y_soft and sample_y for REINFORCE -> RELAX uses b = H(z)
       # y_soft = tf.math.softmax(tf.div(z, 0.1))  # this is Gumbel-Softmax; low temp -> approaches argmax
       # sample_y = tf.math.argmax(y_soft, axis=2)
 
       ##### RELAX VARIABLES ################################################################################
-      v = tf.random_uniform(shape=outputs["one_hot_targets"].get_shape().as_list(),
-                            minval=1e-8,
-                            maxval=1,
-                            dtype=tf.float32)
-      b = tf.stop_gradient(tf.math.argmax(z, axis=2))  # this is Gumbel-Max (used for RELAX)
+      # v = tf.random_uniform(shape=outputs["one_hot_targets"].get_shape().as_list(),
+      #                       minval=1e-8,
+      #                       maxval=1,
+      #                       dtype=tf.float32)
+      # b = tf.stop_gradient(tf.math.argmax(z, axis=2))  # this is Gumbel-Max (used for RELAX)
 
       # create index tensor where b is the argmax, to use as indexer for substitution
-      b_new = tf.squeeze(b, 0)
-      index_tensor_b = tf.expand_dims(tf.stack([batch_index, sequence_index, b_new], axis=1), 0)
+      # b_new = tf.squeeze(b, 0)
+      # index_tensor_b = tf.expand_dims(tf.stack([batch_index, sequence_index, b_new], axis=1), 0)
 
-      v_b = tf.gather_nd(v, index_tensor_b)  # values of v where b are the argmax indexes
-      update = -tf.log(-tf.log(v_b))  # for i == b
+      # v_b = tf.gather_nd(v, index_tensor_b)  # values of v where b are the argmax indexes
+      # update = -tf.log(-tf.log(v_b))  # for i == b
 
       # create z_tilde as for the case where i != b
-      z_tilde = -tf.log(-tf.div(tf.log(v), clipped_logit_probs) - tf.expand_dims(tf.log(v_b), 2))
-      z_tilde = tf.tensor_scatter_nd_update(z_tilde, index_tensor_b, update)
+      # z_tilde = -tf.log(-tf.div(tf.log(v), clipped_logit_probs) - tf.expand_dims(tf.log(v_b), 2))
+      # z_tilde = tf.tensor_scatter_nd_update(z_tilde, index_tensor_b, update)
 
-      logp_b = tf.gather_nd(logp, index_tensor_b)  # used in loss func
+      # logp_b = tf.gather_nd(logp, index_tensor_b)  # used in loss func
 
       ##### DECODING + ROUGE LOSS ###################################################################################
       # TARGET text
-      decode_target_text_tensor = public_parsing_ops.decode(outputs["targets"], model_params.vocab_filename,
-                                                            model_params.encoder_type)
-      decode_target_text = tf.stop_gradient(decode_target_text_tensor[0])
+      # decode_target_text_tensor = public_parsing_ops.decode(outputs["targets"], model_params.vocab_filename,
+      #                                                       model_params.encoder_type)
+      # decode_target_text = tf.stop_gradient(decode_target_text_tensor[0])
 
       # ARGMAX text
       # decode_preds_text_tensor_hard = public_parsing_ops.decode(argmax_logp_index, model_params.vocab_filename,
@@ -205,13 +205,13 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # r1_score_hard = -tf.py_function(evaluate_rl, (decode_target_text, decode_preds_text_hard, 2), tf.float32)
 
       # SOFTMAX text - samply_y and b are interchangeable
-      decode_preds_text_tensor_soft = public_parsing_ops.decode(b, model_params.vocab_filename,
-                                                                model_params.encoder_type)
-      decode_preds_text_soft = tf.stop_gradient(decode_preds_text_tensor_soft[0])
+      # decode_preds_text_tensor_soft = public_parsing_ops.decode(b, model_params.vocab_filename,
+      #                                                           model_params.encoder_type)
+      # decode_preds_text_soft = tf.stop_gradient(decode_preds_text_tensor_soft[0])
 
       # NOTE: for ROUGE variant, change value (0: precision, 1: recall, 2: f1)
       # calculate ROUGE loss (softmax) -> ROUGE loss = -ROUGE score
-      r1_score_soft = -tf.py_function(evaluate_rl, (decode_target_text, decode_preds_text_soft, 2), tf.float32)
+      # r1_score_soft = -tf.py_function(evaluate_rl, (decode_target_text, decode_preds_text_soft, 2), tf.float32)
 
       ##### REINFORCE LOSS ##########################################################################################
       # ARGMAX -> logp(argmax(y))
@@ -263,64 +263,65 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       ##### RELAX CONTROL VARIATE ###################################################################################
       # Here we need to convert the IDs from the target, to the probabilities for ROUGE mimic
       # TODO: probabilities from z or from logp?
-      target_id_cv = tf.reshape(outputs['targets'], [outputs['targets'].get_shape().as_list()[1]])
-      index_tensor_target = tf.stack([batch_index, sequence_index, target_id_cv], axis=1)
+      # target_id_cv = tf.reshape(outputs['targets'], [outputs['targets'].get_shape().as_list()[1]])
+      # index_tensor_target = tf.stack([batch_index, sequence_index, target_id_cv], axis=1)
 
-      target_probs_cv_z = tf.expand_dims(tf.expand_dims(tf.gather_nd(z, index_tensor_target),0),2)  # finds log probs using targets indexing
-      target_probs_cv_ztilde = tf.expand_dims(tf.expand_dims(tf.gather_nd(z_tilde, index_tensor_target),0),2)  # finds log probs using targets indexing
+      # finds log probs using targets indexing
+      # tgt_probs_cv_z = tf.expand_dims(tf.expand_dims(tf.gather_nd(z, index_tensor_target),0),2)
+      # tgt_probs_cv_ztilde = tf.expand_dims(tf.expand_dims(tf.gather_nd(z_tilde, index_tensor_target),0),2)
 
-      z_target = tf.broadcast_to(target_probs_cv_z, z.get_shape().as_list())
-      zt_target = tf.broadcast_to(target_probs_cv_ztilde, z_tilde.get_shape().as_list())
+      # z_target = tf.broadcast_to(tgt_probs_cv_z, z.get_shape().as_list())
+      # zt_target = tf.broadcast_to(tgt_probs_cv_ztilde, z_tilde.get_shape().as_list())
 
       ##### RELAX LOSS ##############################################################################################
       # RELAX Q_func
-      with tf.variable_scope("Q_func"):
-          c_z = Q_func(z, z_target)
+      # with tf.variable_scope("Q_func"):
+      #     c_z = Q_func(z, z_target)
 
-      with tf.variable_scope("Q_func", reuse=True):
-          c_z_tilde = Q_func(z_tilde, zt_target)
+      # with tf.variable_scope("Q_func", reuse=True):
+      #     c_z_tilde = Q_func(z_tilde, zt_target)
 
       # Formulate RELAX as a loss function
-      f_y = r1_score_soft  # negative for loss (defined above)
-      c_z_tilde1 = tf.stop_gradient(tf.identity(c_z_tilde))  # clone, detach, stop grad
-      L_relax = tf.reduce_sum((f_y - c_z_tilde1)*logp_b) - c_z_tilde + c_z  # logp
+      # f_y = r1_score_soft  # negative for loss (defined above)
+      # c_z_tilde1 = tf.stop_gradient(tf.identity(c_z_tilde))  # clone, detach, stop grad
+      # L_relax = tf.reduce_sum((f_y - c_z_tilde1)*logp_b) - c_z_tilde + c_z  # logp
 
       # OR construct gradient estimator
-      theta = [tv for tv in tf.trainable_variables() if "Q_func" not in tv.name]
-      d_logp_d_theta = tf.gradients(logp_b, theta)[0]  # logp
-      d_c_z_tilde_d_theta = tf.gradients(c_z_tilde, theta)[0]
-      d_c_z_d_theta = tf.gradients(c_z, theta)[0]
+      # theta = [tv for tv in tf.trainable_variables() if "Q_func" not in tv.name]
+      # d_logp_d_theta = tf.gradients(logp_b, theta)[0]  # logp
+      # d_c_z_tilde_d_theta = tf.gradients(c_z_tilde, theta)[0]
+      # d_c_z_d_theta = tf.gradients(c_z, theta)[0]
 
-      relax = (f_y - c_z_tilde)*d_logp_d_theta - d_c_z_tilde_d_theta + d_c_z_d_theta
+      # relax = (f_y - c_z_tilde)*d_logp_d_theta - d_c_z_tilde_d_theta + d_c_z_d_theta
 
       # Calculate the first optimization step with loss
-      list_of_gradient_variable_pairs = optimizer.compute_gradients(L_relax)
-      train_op = optimizer.apply_gradients(list_of_gradient_variable_pairs, global_step=global_step)
+      # list_of_gradient_variable_pairs = optimizer.compute_gradients(L_relax)
+      # train_op = optimizer.apply_gradients(list_of_gradient_variable_pairs, global_step=global_step)
 
       # Variance reduction objective
       # relax_grads = [i[0] for i in list_of_gradient_variable_pairs]  # TODO: extraction does not work
-      variance_loss = tf.reduce_mean(tf.square(relax), name="variance_loss")
+      # variance_loss = tf.reduce_mean(tf.square(relax), name="variance_loss")
 
       # initialise adafactor again for variance optimiser
-      var_opt = adafactor.AdafactorOptimizer(
-                learning_rate=lr,
-                decay_rate=adafactor.adafactor_decay_rate_pow(0.8),
-                beta1=0.0)
+      # var_opt = adafactor.AdafactorOptimizer(
+      #           learning_rate=lr,
+      #           decay_rate=adafactor.adafactor_decay_rate_pow(0.8),
+      #           beta1=0.0)
 
       # est_params = [eta, log_temperature]  # TODO: REBAR implementation
 
       # Adds the parameters of the FFNN
-      nn_params = [tv for tv in tf.trainable_variables() if "Q_func" in tv.name]
-      est_params = nn_params
+      # nn_params = [tv for tv in tf.trainable_variables() if "Q_func" in tv.name]
+      # est_params = nn_params
       # est_params = est_params + nn_params  # TODO: REBAR implementation
 
       # Additional optimization step
-      var_gradvars = var_opt.compute_gradients(variance_loss, var_list=est_params)
-      var_train_op = var_opt.apply_gradients(var_gradvars)
+      # var_gradvars = var_opt.compute_gradients(variance_loss, var_list=est_params)
+      # var_train_op = var_opt.apply_gradients(var_gradvars)
 
       # This may allow for both train ops to be passed in the return statement below?
-      with tf.control_dependencies([train_op, var_train_op]):
-          train_op = tf.no_op()
+      # with tf.control_dependencies([train_op, var_train_op]):
+      #     train_op = tf.no_op()
 
       ###############################################################################################################
       # Calculate gradients
@@ -329,36 +330,33 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # last_params = [tv for tv in tf.trainable_variables() if "decoder/LayerNorm/" in tv.name]
       # list_of_gradient_variable_pairs = optimizer.compute_gradients(combined_loss, var_list=last_params)
 
-      # list_of_gradient_variable_pairs = optimizer.compute_gradients(combined_loss)
-      # train_op = optimizer.apply_gradients(list_of_gradient_variable_pairs, global_step=global_step)
+      list_of_gradient_variable_pairs = optimizer.compute_gradients(XENT_loss)
+      train_op = optimizer.apply_gradients(list_of_gradient_variable_pairs, global_step=global_step)
 
       tf.logging.set_verbosity(tf.logging.INFO)
       # Debugging steps - add into logging hook directly if needed
       # tf.debugging.check_numerics(sum_logp, "DEBUG: sum_logp has a NaN")
 
-      logging_hook = tf.train.LoggingTensorHook({"loss": L_relax,
+      logging_hook = tf.train.LoggingTensorHook({"loss": XENT_loss,
                                                  # "variance_loss": variance_loss,
                                                  "learning_rate": lr,
                                                  "global_step": global_step,
-                                                 # "c_z": c_z,
-                                                 # "c_z_tilde": c_z_tilde,
-                                                 # "f_y": f_y
                                                  }, every_n_iter=5)
 
       # This is the configured estimator function that is returned to train the model
       return tpu_estimator.TPUEstimatorSpec(
           mode=mode,
-          loss=L_relax,
+          loss=XENT_loss,
           train_op=train_op,
           training_hooks=[logging_hook],
           scaffold_fn=_load_vars_from_checkpoint(use_tpu,
                                                  train_init_checkpoint),
           host_call=add_scalars_to_summary(model_dir, {"learning_rate": lr,
                                                        # "rouge_loss_hard": r1_score_hard,
-                                                       "rouge_loss_soft": r1_score_soft,
+                                                       # "rouge_loss_soft": r1_score_soft,
                                                        # "reinforce_loss": soft_reinforce_baseline,
                                                        # "XENT_loss": XENT_loss,
-                                                       "c_z": c_z, "c_z_tilde": c_z_tilde
+                                                       # "c_z": c_z, "c_z_tilde": c_z_tilde
                                                        }))
 
     # EVALUATION (evaluating the performance)
