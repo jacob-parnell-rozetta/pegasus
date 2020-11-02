@@ -238,7 +238,7 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # hard_loss_difference = tf.subtract(r1_score_hard, r1_score_soft)
       # hard_reinforce_baseline = tf.reduce_sum(tf.multiply(loss_difference, argmax_logp))
 
-      ##### NEW REINFORCE LOSS ######################################################################################
+      ##### REINFORCE w/ THRESHOLD ##################################################################################
       # we take output of ROUGE score as ROUGE_loss = -ROUGE score
       # hard_intermediate_loss = tf.reduce_sum(tf.multiply(tf.subtract(0.3, -r1_score_hard), argmax_logp))
       # soft_intermediate_loss = tf.reduce_sum(tf.multiply(tf.subtract(0.5, -r1_score_soft), softmax_logp))
