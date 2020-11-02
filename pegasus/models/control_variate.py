@@ -1,3 +1,4 @@
+"""These are the varying control_variate functions we could implement for experiments."""
 import tensorflow as tf
 
 
@@ -40,9 +41,9 @@ def ffn_baseline(inputs, ground_truth):
 
 
 def control_variate(input):
-    ffn_input_size = input.get_shape().as_list()[2]  # this should return the vocab length
-    hidden1_size = 128  # TODO: should this change?
-    ffn_output_size = 1  # TODO: what is the output of c(z) or c(z_tilde)? ASSUME a scalar for now.
+    ffn_input_size = input.get_shape().as_list()[2]
+    hidden1_size = 128
+    ffn_output_size = 1
 
     # Names used to extract trainable variables in RELAX variance reduction
     weights = {"w1": tf.Variable(tf.random_normal([ffn_input_size, hidden1_size]) * 0.01, name="control_variate_w1"),
@@ -63,3 +64,13 @@ def control_variate(input):
         control_variate_output = shallow_network_relax(input, weights, biases)
 
     return control_variate_output
+
+
+def Q_func(z, target):
+    combined = tf.concat([z, target], axis=1)  # concat([BxTxV, BxTxV], 1) -> [Bx2Tx2V]
+    h1 = tf.layers.dense(2. * combined - 1., 128, tf.nn.relu, name="q_1", use_bias=True)
+    # h2 = tf.layers.dense(h1, 10, tf.nn.relu, name="q_2", use_bias=True)
+    out = tf.layers.dense(h1, 1, name="q_out", use_bias=True)
+    out = -tf.nn.sigmoid(out)  # sigmoid for normalisation, minus for correct range
+    out = tf.reduce_mean(out)
+    return out
