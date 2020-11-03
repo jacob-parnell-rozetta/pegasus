@@ -243,14 +243,6 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # hard_intermediate_loss = tf.reduce_sum(tf.multiply(tf.subtract(0.3, -r1_score_hard), argmax_logp))
       # soft_intermediate_loss = tf.reduce_sum(tf.multiply(tf.subtract(0.5, -r1_score_soft), softmax_logp))
 
-      ##### MIXED LOSS ##############################################################################################
-      # combined_loss = tf.math.add(tf.multiply(tf.constant(0.7, dtype=tf.float32), XENT_loss),
-      #                             tf.multiply(tf.constant(0.3, dtype=tf.float32), soft_reinforce_baseline))
-
-      # OR conditional loss switch
-      # constraint = tf.random_uniform(shape=(), minval=0, maxval=1, dtype=tf.float32)
-      # combined_loss = tf.cond(constraint > 0.8, lambda: hard_reinforce_loss, lambda: XENT_loss)
-
       ##### FFN LOSS (RwB) ##########################################################################################
       # ffn_output = ffn_baseline(outputs["hidden_states"], outputs["context_memory"])
 
@@ -265,6 +257,22 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # candidate translations are obtained via beam search
       # p(u|x, theta) = f(u,x,theta) / sum_u'(f(u',x,theta))
       # f(u,x,theta) = exp([1/m] * sum_j(logp(u_j | u_1 ... u_j-1, x, theta)))
+
+      # seq_len = tf.cast(outputs["targets"].get_shape().as_list()[1], tf.float32)
+      # f_u = tf.exp(tf.div(1.0, seq_len) * tf.reduce_sum(argmax_logp))
+      # f_u_soft = tf.exp(tf.div(1.0, seq_len) * tf.reduce_sum(softmax_logp))
+      # f_u_hard = tf.exp(tf.div(1.0, seq_len) * tf.reduce_sum(argmax_logp))
+      # p_u = f_u / tf.reduce_sum([f_u_hard, f_u_soft])
+
+      # L_risk = tf.reduce_sum(tf.multiply(r1_score_hard, p_u))
+
+      ##### MIXED LOSS ##############################################################################################
+      # combined_loss = tf.math.add(tf.multiply(tf.constant(0.7, dtype=tf.float32), XENT_loss),
+      #                             tf.multiply(tf.constant(0.3, dtype=tf.float32), L_risk))
+
+      # OR conditional loss switch
+      # constraint = tf.random_uniform(shape=(), minval=0, maxval=1, dtype=tf.float32)
+      # combined_loss = tf.cond(constraint > 0.8, lambda: hard_reinforce_loss, lambda: XENT_loss)
 
       ##### RELAX CONTROL VARIATE ###################################################################################
       # Here we need to convert the IDs from the target, to the probabilities for ROUGE mimic
