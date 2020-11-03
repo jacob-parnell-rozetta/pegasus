@@ -158,6 +158,9 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # SAMPLING W/ ARGMAX
       # argmax_logp_index = tf.math.argmax(logp, axis=2)  # Returns indexes where logp is max
 
+      # TOP-K ARGMAX SAMPLING
+      # top_k_logp_index = tf.math.top_k(logp, k=2)
+
       # SAMPLING W/ SOFTMAX - 'soft' labels of the Gumbel samples, and their one-hot labels
       # u = tf.random_uniform(shape=outputs["one_hot_targets"].get_shape().as_list(),
       #                       minval=1e-8,
@@ -213,11 +216,23 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # calculate ROUGE loss (softmax) -> ROUGE loss = -ROUGE score
       # r1_score_soft = -tf.py_function(evaluate_rl, (decode_target_text, decode_preds_text_soft, 2), tf.float32)
 
+      # 2ND ARGMAX
+      # decode_preds_text_tensor_hard2 = public_parsing_ops.decode(top_k_logp_index, model_params.vocab_filename,
+      #                                                            model_params.encoder_type)
+      # decode_preds_text_hard2 = tf.stop_gradient(decode_preds_text_tensor_hard2[0])
+
+      # r1_score_hard2 = -tf.py_function(evaluate_rl, (decode_target_text, decode_preds_text_hard2, 2), tf.float32)
+
       ##### REINFORCE LOSS ##########################################################################################
       # ARGMAX -> logp(argmax(y))
       # argmax_logp_new = tf.reshape(argmax_logp_index, [argmax_logp_index.get_shape().as_list()[1]])
       # index_tensor_hard = tf.stack([batch_index, sequence_index, argmax_logp_new], axis=1)
       # argmax_logp = tf.gather_nd(logp, index_tensor_hard)  # finds log probs using hard indexing
+
+      # 2ND ARGMAX
+      # top_k_logp_new = tf.reshape(top_k_logp_index, [top_k_logp_index.get_shape().as_list()[1]])
+      # index_tensor_hard2 = tf.stack([batch_index, sequence_index, top_k_logp_new], axis=1)
+      # top_k_logp = tf.gather_nd(logp, index_tensor_hard2)  # finds log probs using hard indexing
 
       # SOFTMAX -> logp(sample_y)
       # sampled_vals_new = tf.reshape(sample_y, [sample_y.get_shape().as_list()[1]])
@@ -254,17 +269,25 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
 
       ##### EXPECTED RISK MINIMISATION ##############################################################################
       # L_risk = -r(u,y)*p(u|x,theta) -> U(x) is a set of candidate translations
-      # candidate translations are obtained via beam search
-      # p(u|x, theta) = f(u,x,theta) / sum_u'(f(u',x,theta))
-      # f(u,x,theta) = exp([1/m] * sum_j(logp(u_j | u_1 ... u_j-1, x, theta)))
-
       # seq_len = tf.cast(outputs["targets"].get_shape().as_list()[1], tf.float32)
-      # f_u = tf.exp(tf.div(1.0, seq_len) * tf.reduce_sum(argmax_logp))
+
+      # Calculate f_u for as many sequences
       # f_u_soft = tf.exp(tf.div(1.0, seq_len) * tf.reduce_sum(softmax_logp))
       # f_u_hard = tf.exp(tf.div(1.0, seq_len) * tf.reduce_sum(argmax_logp))
-      # p_u = f_u / tf.reduce_sum([f_u_hard, f_u_soft])
+      # f_u_hard2 = tf.exp(tf.div(1.0, seq_len) * tf.reduce_sum(top_k_logp))
 
-      # L_risk = tf.reduce_sum(tf.multiply(r1_score_hard, p_u))
+      # Calculate p_u for as many sequences
+      # p_u_soft = f_u_soft / tf.reduce_sum([f_u_hard, f_u_hard2, f_u_soft])
+      # p_u_hard = f_u_hard / tf.reduce_sum([f_u_hard, f_u_hard2, f_u_soft])
+      # p_u_hard2 = f_u_hard2 / tf.reduce_sum([f_u_hard, f_u_hard2, f_u_soft])
+
+      # Calculate each risk loss
+      # L_risk_hard = tf.reduce_sum(tf.multiply(r1_score_hard, p_u_hard))
+      # L_risk_hard2 = tf.reduce_sum(tf.multiply(r1_score_hard2, p_u_hard2))
+      # L_risk_soft = tf.reduce_sum(tf.multiply(r1_score_soft, p_u_soft))
+
+      # Overall Risk loss
+      # L_risk = tf.reduce_sum(L_risk_hard, L_risk_hard2, L_risk_soft)
 
       ##### MIXED LOSS ##############################################################################################
       # combined_loss = tf.math.add(tf.multiply(tf.constant(0.7, dtype=tf.float32), XENT_loss),
@@ -298,7 +321,7 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # Formulate RELAX as a loss function
       # f_y = r1_score_soft  # negative for loss (defined above)
       # c_z_tilde1 = tf.stop_gradient(tf.identity(c_z_tilde))  # clone, detach, stop grad
-      # L_relax = tf.reduce_sum((f_y - c_z_tilde1)*logp_b) - c_z_tilde + c_z  # logp
+      # L_relax = tf.reduce_sum(((f_y - c_z_tilde1)*logp_b) - c_z_tilde + c_z)
 
       # OR construct gradient estimator
       # theta = [tv for tv in tf.trainable_variables() if "Q_func" not in tv.name]
