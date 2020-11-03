@@ -260,6 +260,12 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # constraint = tf.random_uniform(shape=(), minval=0, maxval=1, dtype=tf.float32)
       # combined_loss = tf.cond(constraint > 0.8, lambda: reinforce_baseline, lambda: XENT_loss)
 
+      ##### EXPECTED RISK MINIMISATION ##############################################################################
+      # L_risk = -r(u,y)*p(u|x,theta) -> U(x) is a set of candidate translations
+      # candidate translations are obtained via beam search
+      # p(u|x, theta) = f(u,x,theta) / sum_u'(f(u',x,theta))
+      # f(u,x,theta) = exp([1/m] * sum_j(logp(u_j | u_1 ... u_j-1, x, theta)))
+
       ##### RELAX CONTROL VARIATE ###################################################################################
       # Here we need to convert the IDs from the target, to the probabilities for ROUGE mimic
       # TODO: probabilities from z or from logp?
