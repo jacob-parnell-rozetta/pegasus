@@ -179,7 +179,10 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # y_soft = tf.math.softmax(tf.div(z, 0.1))  # this is Gumbel-Softmax; low temp -> approaches argmax
       # sample_y = tf.math.argmax(y_soft, axis=2)
 
-      ##### RELAX VARIABLES ################################################################################
+      ##### BEAM SEARCH SAMPLING ###################################################################################
+      # TODO: implement beam search/sampling for REINFORCE, RwB, RISK, RELAX etc.
+
+      ##### RELAX VARIABLES ########################################################################################
       # v = tf.random_uniform(shape=outputs["one_hot_targets"].get_shape().as_list(),
       #                       minval=1e-8,
       #                       maxval=1,
