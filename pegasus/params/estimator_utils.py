@@ -146,7 +146,8 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       ###############################################################################################################
       ##### VARIABLES ###############################################################################################
       # Create index tensors to stack and get corresponding probabilities from logp
-      # sequence_index = tf.constant(np.arange(0, outputs["targets"].get_shape().as_list()[1]))
+      # max_seq_len = outputs["targets"].get_shape().as_list()[1]
+      # sequence_index = tf.constant(np.arange(0, max_seq_len))
       # batch_index = tf.constant(np.zeros(sequence_index.get_shape().as_list()[0]), dtype=tf.int64)
 
       ##### SAMPLING ################################################################################################
@@ -159,7 +160,13 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # argmax_logp_index = tf.math.argmax(logp, axis=2)  # Returns indexes where logp is max
 
       # TOP-K ARGMAX SAMPLING
-      # top_k_logp_index = tf.math.top_k(logp, k=2)
+      # TODO: unsure of this - check in logging
+      # topk_probs, topk_indices = tf.math.top_k(logp, k=2)
+
+      # topk_probs_2 = tf.slice(topk_probs, [0, 0, 1], [1, max_seq_len, 1])
+      # topk_probs_2 = tf.squeeze(topk_probs_2, 2)
+      # topk_indices_2 = tf.slice(topk_indices, [0, 0, 1], [1, max_seq_len, 1])
+      # topk_indices_2 = tf.squeeze(topk_indices_2, 2)
 
       # SAMPLING W/ SOFTMAX - 'soft' labels of the Gumbel samples, and their one-hot labels
       # u = tf.random_uniform(shape=outputs["one_hot_targets"].get_shape().as_list(),
@@ -217,7 +224,7 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # r1_score_soft = -tf.py_function(evaluate_rl, (decode_target_text, decode_preds_text_soft, 2), tf.float32)
 
       # 2ND ARGMAX
-      # decode_preds_text_tensor_hard2 = public_parsing_ops.decode(top_k_logp_index, model_params.vocab_filename,
+      # decode_preds_text_tensor_hard2 = public_parsing_ops.decode(topk_indices_2, model_params.vocab_filename,
       #                                                            model_params.encoder_type)
       # decode_preds_text_hard2 = tf.stop_gradient(decode_preds_text_tensor_hard2[0])
 
@@ -230,7 +237,7 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # argmax_logp = tf.gather_nd(logp, index_tensor_hard)  # finds log probs using hard indexing
 
       # 2ND ARGMAX
-      # top_k_logp_new = tf.reshape(top_k_logp_index, [top_k_logp_index.get_shape().as_list()[1]])
+      # top_k_logp_new = tf.cast(tf.reshape(topk_indices_2, [topk_indices_2.get_shape().as_list()[1]]), tf.int64)
       # index_tensor_hard2 = tf.stack([batch_index, sequence_index, top_k_logp_new], axis=1)
       # top_k_logp = tf.gather_nd(logp, index_tensor_hard2)  # finds log probs using hard indexing
 
@@ -269,12 +276,10 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
 
       ##### EXPECTED RISK MINIMISATION ##############################################################################
       # L_risk = -r(u,y)*p(u|x,theta) -> U(x) is a set of candidate translations
-      # seq_len = tf.cast(outputs["targets"].get_shape().as_list()[1], tf.float32)
-
       # Calculate f_u for as many sequences
-      # f_u_soft = tf.exp(tf.div(1.0, seq_len) * tf.reduce_sum(softmax_logp))
-      # f_u_hard = tf.exp(tf.div(1.0, seq_len) * tf.reduce_sum(argmax_logp))
-      # f_u_hard2 = tf.exp(tf.div(1.0, seq_len) * tf.reduce_sum(top_k_logp))
+      # f_u_soft = tf.exp(tf.div(1.0, max_seq_len) * tf.reduce_sum(softmax_logp))
+      # f_u_hard = tf.exp(tf.div(1.0, max_seq_len) * tf.reduce_sum(argmax_logp))
+      # f_u_hard2 = tf.exp(tf.div(1.0, max_seq_len) * tf.reduce_sum(top_k_logp))
 
       # Calculate p_u for as many sequences
       # p_u_soft = f_u_soft / tf.reduce_sum([f_u_hard, f_u_hard2, f_u_soft])
@@ -287,11 +292,11 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # L_risk_soft = tf.reduce_sum(tf.multiply(r1_score_soft, p_u_soft))
 
       # Overall Risk loss
-      # L_risk = tf.reduce_sum(L_risk_hard, L_risk_hard2, L_risk_soft)
+      # L_risk = tf.reduce_sum([L_risk_hard, L_risk_hard2, L_risk_soft])
 
       ##### MIXED LOSS ##############################################################################################
-      # combined_loss = tf.math.add(tf.multiply(tf.constant(0.7, dtype=tf.float32), XENT_loss),
-      #                             tf.multiply(tf.constant(0.3, dtype=tf.float32), L_risk))
+      # combined_loss = tf.math.add(tf.multiply(tf.constant(0.3, dtype=tf.float32), XENT_loss),
+      #                             tf.multiply(tf.constant(0.7, dtype=tf.float32), L_risk))
 
       # OR conditional loss switch
       # constraint = tf.random_uniform(shape=(), minval=0, maxval=1, dtype=tf.float32)
@@ -393,6 +398,7 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
           host_call=add_scalars_to_summary(model_dir, {"learning_rate": lr,
                                                        # "rouge_loss_hard": r1_score_hard,
                                                        # "rouge_loss_soft": r1_score_soft,
+                                                       # "rouge_loss_hard2": r1_score_hard2,
                                                        # "reinforce_loss": soft_reinforce_baseline,
                                                        # "XENT_loss": XENT_loss,
                                                        # "c_z": c_z, "c_z_tilde": c_z_tilde
