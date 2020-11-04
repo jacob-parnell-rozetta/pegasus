@@ -334,7 +334,7 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # d_c_z_tilde_d_theta = tf.gradients(c_z_tilde, theta)[0]
       # d_c_z_d_theta = tf.gradients(c_z, theta)[0]
 
-      # TODO: [1, 32] * [96103, 1024]
+      # TODO: [1, 32] * [96103, 1024] -> change manual grad calc
       # relax = tf.reduce_sum(f_y - c_z_tilde)*d_logp_d_theta - d_c_z_tilde_d_theta + d_c_z_d_theta
 
       # Calculate the first optimization step with loss
