@@ -97,7 +97,7 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
 
     # PREDICTION (e.g. evaluate)
     if mode == tf.estimator.ModeKeys.PREDICT:
-      predictions = model_params.estimator_prediction_fn(features)
+      predictions, _ = model_params.estimator_prediction_fn(features)
 
       if include_features_in_predictions:
         predictions.update(features)
@@ -160,7 +160,6 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # argmax_logp_index = tf.math.argmax(logp, axis=2)  # Returns indexes where logp is max
 
       # TOP-K ARGMAX SAMPLING
-      # TODO: unsure of this - check in logging
       # topk_probs, topk_indices = tf.math.top_k(logp, k=2)
 
       # topk_probs_2 = tf.slice(topk_probs, [0, 0, 1], [1, max_seq_len, 1])
@@ -180,7 +179,15 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # sample_y = tf.math.argmax(y_soft, axis=2)
 
       ##### BEAM SEARCH SAMPLING ###################################################################################
-      # TODO: implement beam search/sampling for REINFORCE, RwB, RISK, RELAX etc.
+      # random_preds, random_logits = model_params.model().predict(features, max_seq_len, beam_size=1, top_k=0,
+      #                                                            top_p=0.0, temperature=1.0)
+      # random_preds = random_preds["outputs"]
+      # topk_preds, topk_logits = model_params.model().predict(features, max_seq_len, beam_size=1, top_k=2, top_p=0.0,
+      #                                                        temperature=1.0)
+      # topk_preds = topk_preds["outputs"]
+      # greedy_preds, greedy_logits = model_params.model().predict(features, max_seq_len, beam_size=1, top_k=0,
+      #                                                            top_p=0.0, temperature=0.0)
+      # greedy_preds = greedy_preds["outputs"]
 
       ##### RELAX VARIABLES ########################################################################################
       # v = tf.random_uniform(shape=outputs["one_hot_targets"].get_shape().as_list(),
