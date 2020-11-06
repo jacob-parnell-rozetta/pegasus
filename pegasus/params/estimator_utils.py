@@ -150,16 +150,16 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # sequence_index = tf.constant(np.arange(0, max_seq_len))
       # batch_index = tf.constant(np.zeros(sequence_index.get_shape().as_list()[0]), dtype=tf.int64)
 
-      ##### SAMPLING ################################################################################################
+      ##### I.I.D SAMPLING ##########################################################################################
       # Normalise logits to log-prob, and compute Gumbel samples with location
       # logit_probs = tf.math.softmax(outputs["logits"])  # should not be x <= 0
       # clipped_logit_probs = tf.clip_by_value(logit_probs, 1e-8, 1.0)
       # logp = tf.log(clipped_logit_probs)
 
-      # SAMPLING W/ ARGMAX
+      # ARGMAX OF LOG_PROB
       # argmax_logp_index = tf.math.argmax(logp, axis=2)  # Returns indexes where logp is max
 
-      # TOP-K ARGMAX SAMPLING
+      # TOP-K SAMPLES FROM LOG_PROB
       # topk_probs, topk_indices = tf.math.top_k(logp, k=2)
 
       # topk_probs_2 = tf.slice(topk_probs, [0, 0, 1], [1, max_seq_len, 1])
@@ -167,7 +167,7 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # topk_indices_2 = tf.slice(topk_indices, [0, 0, 1], [1, max_seq_len, 1])
       # topk_indices_2 = tf.squeeze(topk_indices_2, 2)
 
-      # SAMPLING W/ SOFTMAX - 'soft' labels of the Gumbel samples, and their one-hot labels
+      # SOFT SAMPLES OF LOG_PROB - 'soft' labels of the Gumbel samples, and their one-hot labels
       # u = tf.random_uniform(shape=outputs["one_hot_targets"].get_shape().as_list(),
       #                       minval=1e-8,
       #                       maxval=1,
@@ -178,36 +178,35 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # y_soft = tf.math.softmax(tf.div(z, 0.1))  # this is Gumbel-Softmax; low temp -> approaches argmax
       # sample_y = tf.math.argmax(y_soft, axis=2)
 
-      ##### DECODER SAMPLING ######################################################################################
+      ##### DECODER SAMPLING ########################################################################################
+      # RANDOMLY SAMPLE INDIVIDUAL TOKENS FROM DECODER DISTRIBUTION
       # random_preds, random_logits = model_params.model().predict(features, max_seq_len, beam_size=1, top_k=0,
       #                                                            top_p=0.0, temperature=1.0)
-      # random_preds = random_preds["outputs"]
-      # random_logp = tf.squeeze(tf.log(tf.clip_by_value(tf.math.softmax(random_logits), 1e-8, 1.0)), 0)
-      # topk_preds, topk_logits = model_params.model().predict(features, max_seq_len, beam_size=1, top_k=2, top_p=0.0,
-      #                                                        temperature=1.0)
-      # topk_preds = topk_preds["outputs"]
-      # topk_logp = tf.squeeze(tf.log(tf.clip_by_value(tf.math.softmax(topk_logits), 1e-8, 1.0)), 0)
+      # random_preds = random_preds["outputs"]  # gets the IDs
+      # random_logp = tf.squeeze(tf.log(tf.clip_by_value(tf.math.softmax(random_logits), 1e-8, 1.0)), 0)  # to log_p
+
+      # RANDOMLY SAMPLE INDIVIDUAL TOKENS FROM DECODER'S TOP-K DISTRIBUTION
+      # topk_preds, topk_logits = model_params.model().predict(features, max_seq_len, beam_size=1, top_k=1000,
+      #                                                        top_p=0.0, temperature=1.0)
+      # topk_preds = topk_preds["outputs"]  # gets the IDs
+      # topk_logp = tf.squeeze(tf.log(tf.clip_by_value(tf.math.softmax(topk_logits), 1e-8, 1.0)), 0)  # to log_p
+      # topk_logp_sent = tf.exp((1 / max_seq_len) * tf.reduce_sum(topk_logp))  # sentence score 0-1
+
+      # GREEDY SAMPLE INDIVIDUAL TOKENS FROM DECODER DISTRIBUTION
       # greedy_preds, greedy_logits = model_params.model().predict(features, max_seq_len, beam_size=1, top_k=0,
       #                                                            top_p=0.0, temperature=0.0)
       # greedy_preds = greedy_preds["outputs"]
       # greedy_logp = tf.squeeze(tf.log(tf.clip_by_value(tf.math.softmax(greedy_logits), 1e-8, 1.0)), 0)
+      # greedy_logp_sent = tf.exp((1/max_seq_len) * tf.reduce_sum(greedy_logp))  # sentence score 0-1
 
-      ##### BEAM SEARCH SAMPLING ###################################################################################
-      # TODO: here we can return a beam score (sentence level) or individual logits (token level)
-      # random_preds, random_logits = model_params.model().predict(features, max_seq_len, beam_size=2, top_k=0,
-      #                                                            top_p=0.0, temperature=1.0)
-      # random_preds = random_preds["outputs"]
-      # random_logp = tf.squeeze(tf.log(tf.clip_by_value(tf.math.softmax(random_logits), 1e-8, 1.0)), 0)
-      # topk_preds, topk_logits = model_params.model().predict(features, max_seq_len, beam_size=2, top_k=2, top_p=0.0,
-      #                                                        temperature=1.0)
-      # topk_preds = topk_preds["outputs"]
-      # topk_logp = tf.squeeze(tf.log(tf.clip_by_value(tf.math.softmax(topk_logits), 1e-8, 1.0)), 0)
-      # greedy_preds, greedy_logits = model_params.model().predict(features, max_seq_len, beam_size=2, top_k=0,
-      #                                                            top_p=0.0, temperature=0.0)
-      # greedy_preds = greedy_preds["outputs"]
-      # greedy_logp = tf.squeeze(tf.log(tf.clip_by_value(tf.math.softmax(greedy_logits), 1e-8, 1.0)), 0)
+      # RANDOMLY SAMPLE INDIVIDUAL TOKENS FROM DECODER'S TOP-P DISTRIBUTION
+      # topp_preds, topp_logits = model_params.model().predict(features, max_seq_len, beam_size=1, top_k=0,
+      #                                                        top_p=0.9, temperature=1.0)
+      # topp_preds = topp_preds["outputs"]
+      # topp_logp = tf.squeeze(tf.log(tf.clip_by_value(tf.math.softmax(topp_logits), 1e-8, 1.0)), 0)
+      # topp_logp_sent = tf.exp((1/max_seq_len) * tf.reduce_sum(topp_logp))  # sentence score 0-1
 
-      ##### RELAX VARIABLES ########################################################################################
+      ##### RELAX VARIABLES #########################################################################################
       # v = tf.random_uniform(shape=outputs["one_hot_targets"].get_shape().as_list(),
       #                       minval=1e-8,
       #                       maxval=1,
@@ -227,13 +226,13 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
 
       # logp_b = tf.gather_nd(logp, index_tensor_b)  # used in loss func
 
-      ##### DECODING + ROUGE LOSS ###################################################################################
-      # TARGET text
+      ##### TEXT AND ROUGE ##########################################################################################
+      # TARGET SAMPLES
       # decode_target_text_tensor = public_parsing_ops.decode(outputs["targets"], model_params.vocab_filename,
       #                                                       model_params.encoder_type)
       # decode_target_text = tf.stop_gradient(decode_target_text_tensor[0])
 
-      # ARGMAX text
+      # ARGMAX SAMPLES
       # decode_preds_text_tensor_hard = public_parsing_ops.decode(argmax_logp_index, model_params.vocab_filename,
       #                                                           model_params.encoder_type)
       # decode_preds_text_hard = tf.stop_gradient(decode_preds_text_tensor_hard[0])
@@ -242,7 +241,7 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # calculate ROUGE score (argmax) -> ROUGE loss = -ROUGE score
       # r1_score_hard = -tf.py_function(evaluate_rl, (decode_target_text, decode_preds_text_hard, 2), tf.float32)
 
-      # SOFTMAX text - samply_y and b are interchangeable
+      # SOFTMAX SAMPLES
       # decode_preds_text_tensor_soft = public_parsing_ops.decode(b, model_params.vocab_filename,
       #                                                           model_params.encoder_type)
       # decode_preds_text_soft = tf.stop_gradient(decode_preds_text_tensor_soft[0])
@@ -251,7 +250,7 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # calculate ROUGE loss (softmax) -> ROUGE loss = -ROUGE score
       # r1_score_soft = -tf.py_function(evaluate_rl, (decode_target_text, decode_preds_text_soft, 2), tf.float32)
 
-      # 2ND ARGMAX
+      # 2ND ARGMAX SAMPLES
       # decode_preds_text_tensor_hard2 = public_parsing_ops.decode(topk_indices_2, model_params.vocab_filename,
       #                                                            model_params.encoder_type)
       # decode_preds_text_hard2 = tf.stop_gradient(decode_preds_text_tensor_hard2[0])
@@ -259,6 +258,7 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # r1_score_hard2 = -tf.py_function(evaluate_rl, (decode_target_text, decode_preds_text_hard2, 2), tf.float32)
 
       ##### REINFORCE LOSS ##########################################################################################
+      # FIND CORRESPONDING LOG_PROBS OF THE I.I.D SAMPLED TOKENS
       # ARGMAX -> logp(argmax(y))
       # argmax_logp_new = tf.reshape(argmax_logp_index, [argmax_logp_index.get_shape().as_list()[1]])
       # index_tensor_hard = tf.stack([batch_index, sequence_index, argmax_logp_new], axis=1)
@@ -274,6 +274,7 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # index_tensor_soft = tf.stack([batch_index, sequence_index, sampled_vals_new], axis=1)
       # softmax_logp = tf.gather_nd(logp, index_tensor_soft)  # finds log probs using soft indexing
 
+      # CHANGE BELOW IF USING DECODER SAMPLED TOKENS/SCORES
       # weight the logp by ROUGE score (neg ROUGE_loss), sum values
       # soft_reinforce_loss = tf.reduce_sum(tf.multiply(r1_score_soft, softmax_logp))
       # hard_reinforce_loss = tf.reduce_sum(tf.multiply(r1_score_hard, argmax_logp))
