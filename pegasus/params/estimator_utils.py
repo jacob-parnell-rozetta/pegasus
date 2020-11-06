@@ -178,16 +178,34 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # y_soft = tf.math.softmax(tf.div(z, 0.1))  # this is Gumbel-Softmax; low temp -> approaches argmax
       # sample_y = tf.math.argmax(y_soft, axis=2)
 
-      ##### BEAM SEARCH SAMPLING ###################################################################################
+      ##### DECODER SAMPLING ######################################################################################
       # random_preds, random_logits = model_params.model().predict(features, max_seq_len, beam_size=1, top_k=0,
       #                                                            top_p=0.0, temperature=1.0)
       # random_preds = random_preds["outputs"]
+      # random_logp = tf.squeeze(tf.log(tf.clip_by_value(tf.math.softmax(random_logits), 1e-8, 1.0)), 0)
       # topk_preds, topk_logits = model_params.model().predict(features, max_seq_len, beam_size=1, top_k=2, top_p=0.0,
       #                                                        temperature=1.0)
       # topk_preds = topk_preds["outputs"]
+      # topk_logp = tf.squeeze(tf.log(tf.clip_by_value(tf.math.softmax(topk_logits), 1e-8, 1.0)), 0)
       # greedy_preds, greedy_logits = model_params.model().predict(features, max_seq_len, beam_size=1, top_k=0,
       #                                                            top_p=0.0, temperature=0.0)
       # greedy_preds = greedy_preds["outputs"]
+      # greedy_logp = tf.squeeze(tf.log(tf.clip_by_value(tf.math.softmax(greedy_logits), 1e-8, 1.0)), 0)
+
+      ##### BEAM SEARCH SAMPLING ###################################################################################
+      # TODO: here we can return a beam score (sentence level) or individual logits (token level)
+      # random_preds, random_logits = model_params.model().predict(features, max_seq_len, beam_size=2, top_k=0,
+      #                                                            top_p=0.0, temperature=1.0)
+      # random_preds = random_preds["outputs"]
+      # random_logp = tf.squeeze(tf.log(tf.clip_by_value(tf.math.softmax(random_logits), 1e-8, 1.0)), 0)
+      # topk_preds, topk_logits = model_params.model().predict(features, max_seq_len, beam_size=2, top_k=2, top_p=0.0,
+      #                                                        temperature=1.0)
+      # topk_preds = topk_preds["outputs"]
+      # topk_logp = tf.squeeze(tf.log(tf.clip_by_value(tf.math.softmax(topk_logits), 1e-8, 1.0)), 0)
+      # greedy_preds, greedy_logits = model_params.model().predict(features, max_seq_len, beam_size=2, top_k=0,
+      #                                                            top_p=0.0, temperature=0.0)
+      # greedy_preds = greedy_preds["outputs"]
+      # greedy_logp = tf.squeeze(tf.log(tf.clip_by_value(tf.math.softmax(greedy_logits), 1e-8, 1.0)), 0)
 
       ##### RELAX VARIABLES ########################################################################################
       # v = tf.random_uniform(shape=outputs["one_hot_targets"].get_shape().as_list(),

@@ -139,11 +139,12 @@ def left2right_decode(symbols_to_logits_fn,
   # In this case, alpha value for length penalty will take effect.
   if beam_size == 1:
 
-    def decode_loop(i, decodes_BxT, cache_BxU_dict, unused_log_BxT):
+    def decode_loop(i, decodes_BxT, cache_BxU_dict, log_BxT):
       logits_BxV = symbols_to_logits_fn(decodes_BxT, cache_BxU_dict, i)
       logits_BxV = process_logits(logits_BxV, top_k, top_p, temperature)
       decodes_BxT = inplace_update_i(decodes_BxT, tf.argmax(logits_BxV, -1), i)
-      return i + 1, decodes_BxT, cache_BxU_dict, tf.argmax(logits_BxV, -1)
+      logits_BxT = inplace_update_i(log_BxT, tf.broadcast_to(tf.reduce_max(logits_BxV), [1, ]), i)
+      return i + 1, decodes_BxT, cache_BxU_dict, logits_BxT
 
     def loop_cond(i, decodes_BxT, unused_cache_BxU_dict, unused_log_BxT):
       finished_B = tf.reduce_any(tf.equal(decodes_BxT, EOS_ID), axis=1)
@@ -151,7 +152,7 @@ def left2right_decode(symbols_to_logits_fn,
                             tf.logical_not(tf.reduce_all(finished_B)))
 
     init_dec_BxT = tf.zeros([batch_size, max_decode_len], dtype=dtype)
-    init_log_BxT = tf.zeros([batch_size, max_decode_len], dtype=dtype)  # add as placeholder for vars
+    init_log_BxT = tf.zeros([batch_size, max_decode_len], dtype=tf.float32)  # add as placeholder for vars
     _, decodes, _, logits_BxT = tf.while_loop(
         loop_cond, decode_loop,
         [tf.constant(0, dtype=dtype), init_dec_BxT, context_BxU_dict, init_log_BxT])
