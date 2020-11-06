@@ -141,11 +141,11 @@ def beam_search(symbols_to_logits_fn,
         [finished_seq_Bx3MxT, finished_scores_Bx3M], topk_finished_indices_BxM)
 
     # TODO: FUTURE - ADD RETURNED LOGITS/LOG PROBS FROM BEAM
-    finished_logp_BxMxT = tf.zeros([[1, ]])
+    # finished_logp_BxMxT = tf.zeros([[1, ]])
 
     return [
         i + 1, alive_seq_BxMxT, alive_log_probs_BxM, alive_cache_BxMxU,
-        finished_seq_BxMxT, finished_scores_BxM, finished_logp_BxMxT
+        finished_seq_BxMxT, finished_scores_BxM
     ]
 
   # initialize.
@@ -156,18 +156,18 @@ def beam_search(symbols_to_logits_fn,
   init_alive_cache_BxMxU = tf.nest.map_structure(
       lambda t: _expand_to_beam_size(t, M), initial_cache_BxU)
   init_finished_seq_BxMxT = tf.zeros(tf.shape(init_alive_seq_BxMxT), int_dtype)
-  init_finished_logp_BxMxT = tf.zeros(tf.shape(init_alive_seq_BxMxT), int_dtype)
+  # init_finished_logp_BxMxT = tf.zeros(tf.shape(init_alive_seq_BxMxT), int_dtype)
   init_finished_scores_BxM = tf.zeros([B, M], dtype=dtype) + dtype.min
 
   # run loop.
   (_, final_alive_seq_BxMxT, final_alive_scores_BxM, _,
-   final_finished_seq_BxMxT, final_finished_scores_BxM, final_finished_logp_BxMxT) = tf.while_loop(
+   final_finished_seq_BxMxT, final_finished_scores_BxM) = tf.while_loop(
        lambda *args: True,  # Always do T iterations
        _loop_body,
        loop_vars=[
            init_i, init_alive_seq_BxMxT, init_alive_log_probs_BxM,
            init_alive_cache_BxMxU, init_finished_seq_BxMxT,
-           init_finished_scores_BxM, init_finished_logp_BxMxT
+           init_finished_scores_BxM
        ],
        parallel_iterations=1,
        back_prop=False,

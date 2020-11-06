@@ -346,6 +346,11 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # f_u_hard = tf.exp(tf.div(1.0, max_seq_len) * tf.reduce_sum(argmax_logp))
       # f_u_hard2 = tf.exp(tf.div(1.0, max_seq_len) * tf.reduce_sum(top_k_logp))
 
+      # For beam samples as we currently have a score as sum of log prob
+      # f_u_soft = tf.exp((1.0 / max_seq_len) * random_score)
+      # f_u_hard = tf.exp((1.0 / max_seq_len) * greedy_score)
+      # f_u_hard2 = tf.exp((1.0 / max_seq_len) * greedy_score2)
+
       # Calculate p_u for as many sequences
       # p_u_soft = f_u_soft / tf.reduce_sum([f_u_hard, f_u_hard2, f_u_soft])
       # p_u_hard = f_u_hard / tf.reduce_sum([f_u_hard, f_u_hard2, f_u_soft])
@@ -449,6 +454,10 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
                                                  # "variance_loss": variance_loss,
                                                  "learning_rate": lr,
                                                  "global_step": global_step,
+                                                 # "target_text": decode_target_text,
+                                                 # "soft_preds_text": decode_preds_text_soft,
+                                                 # "hard_preds_text": decode_preds_text_hard,
+                                                 # "hard2_preds_text": decode_preds_text_hard2,
                                                  }, every_n_iter=5)
 
       # This is the configured estimator function that is returned to train the model
