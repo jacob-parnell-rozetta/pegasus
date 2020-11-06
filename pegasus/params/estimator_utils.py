@@ -206,6 +206,42 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # topp_logp = tf.squeeze(tf.log(tf.clip_by_value(tf.math.softmax(topp_logits), 1e-8, 1.0)), 0)
       # topp_logp_sent = tf.exp((1/max_seq_len) * tf.reduce_sum(topp_logp))  # sentence score 0-1
 
+      ##### BEAM SEARCH #############################################################################################
+      # TODO: CURRENT IMPLEMENTATION ONLY ALLOWS SENTENCE SCORES, NEED TO CONFIGURE RETURN OF LOGITS FOR TOKEN_LEVEL
+      #  ADD ADDITIONAL PREDS/SCORE TERMS FOR BEAM_SEARCH >= 3 (memory constrained)
+      # _beam = 2
+      # RANDOMLY SAMPLE INDIVIDUAL TOKENS USING BEAM SEARCH
+      # random_preds_dict, random_scores = model_params.model().predict(features, max_seq_len, beam_size=_beam,
+      #                                                                 top_k=0, top_p=0.0, temperature=1.0)
+      # random_preds = random_preds_dict["outputs"][0]  # gets the IDs
+      # random_preds2 = random_preds_dict["outputs"][1]  # gets the IDs of second best
+      # random_score = random_scores[:, 0]  # sentence score (sum of log_prob) for first
+      # random_score2 = random_scores[:, 1]  # sentence score (sum of log_prob) for second
+
+      # RANDOMLY SAMPLE INDIVIDUAL TOKENS USING BEAM SEARCH FROM TOP-K DISTRIBUTION
+      # topk_preds_dict, topk_scores = model_params.model().predict(features, max_seq_len, beam_size=_beam,
+      #                                                             top_k=0, top_p=0.0, temperature=1.0)
+      # topk_preds = topk_preds_dict["outputs"][0]  # gets the IDs
+      # topk_preds2 = topk_preds_dict["outputs"][1]  # gets the IDs of second best
+      # topk_score = topk_scores[:, 0]  # sentence score (sum of log_prob) for first
+      # topk_score2 = topk_scores[:, 1]  # sentence score (sum of log_prob) for second
+
+      # GREEDY SAMPLE INDIVIDUAL TOKENS USING BEAM SEARCH
+      # greedy_preds_dict, greedy_scores = model_params.model().predict(features, max_seq_len, beam_size=_beam,
+      #                                                                 top_k=0, top_p=0.0, temperature=1.0)
+      # greedy_preds = greedy_preds_dict["outputs"][0]  # gets the IDs
+      # greedy_preds2 = greedy_preds_dict["outputs"][1]  # gets the IDs of second best
+      # greedy_score = greedy_scores[:, 0]  # sentence score (sum of log_prob) for first
+      # greedy_score2 = greedy_scores[:, 1]  # sentence score (sum of log_prob) for second
+
+      # RANDOMLY SAMPLE INDIVIDUAL TOKENS USING BEAM SEARCH FROM TOP-P DISTRIBUTION
+      # topp_preds_dict, topp_scores = model_params.model().predict(features, max_seq_len, beam_size=_beam,
+      #                                                             top_k=0, top_p=0.0, temperature=1.0)
+      # topp_preds = topp_preds_dict["outputs"][0]  # gets the IDs
+      # topp_preds2 = topp_preds_dict["outputs"][1]  # gets the IDs of second best
+      # topp_score = topp_scores[:, 0]  # sentence score (sum of log_prob) for first
+      # topp_score2 = topp_scores[:, 1]  # sentence score (sum of log_prob) for second
+
       ##### RELAX VARIABLES #########################################################################################
       # v = tf.random_uniform(shape=outputs["one_hot_targets"].get_shape().as_list(),
       #                       minval=1e-8,
