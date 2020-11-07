@@ -312,34 +312,25 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
 
       # CHANGE BELOW IF USING DECODER SAMPLED TOKENS/SCORES
       # weight the logp by ROUGE score (neg ROUGE_loss), sum values
-      # soft_reinforce_loss = tf.reduce_sum(tf.multiply(r1_score_soft, softmax_logp))
-      # hard_reinforce_loss = tf.reduce_sum(tf.multiply(r1_score_hard, argmax_logp))
+      # reinforce_loss = tf.reduce_sum(tf.multiply(r1_score_hard, argmax_logp))
 
       ##### REINFORCE w/ BASELINE ###################################################################################
       # Socher (2017)
-      # improve the probs of the SOFT labels
-      # soft_loss_difference = tf.subtract(r1_score_soft, r1_score_hard)
-      # soft_reinforce_baseline = tf.reduce_sum(tf.multiply(soft_loss_difference, softmax_logp))
+      # improve the probs of the SOFT labels (soft - hard)*soft_logp
+      # improve the probs of the HARD labels (hard - soft)*hard_logp
 
-      # improve the probs of the HARD labels
-      # hard_loss_difference = tf.subtract(r1_score_hard, r1_score_soft)
-      # hard_reinforce_baseline = tf.reduce_sum(tf.multiply(loss_difference, argmax_logp))
+      # using control variate as baseline
+      # ffn_output = control_variate(source, targets)
+
+      # loss_difference = tf.subtract(r1_score_soft, r1_score_hard)
+      # reinforce_baseline = tf.reduce_sum(tf.multiply(soft_loss_difference, softmax_logp))
 
       ##### REINFORCE w/ THRESHOLD ##################################################################################
       # we take output of ROUGE score as ROUGE_loss = -ROUGE score
-      # hard_intermediate_loss = tf.reduce_sum(tf.multiply(tf.subtract(0.3, -r1_score_hard), argmax_logp))
-      # soft_intermediate_loss = tf.reduce_sum(tf.multiply(tf.subtract(0.5, -r1_score_soft), softmax_logp))
-
-      ##### FFN LOSS (RwB) ##########################################################################################
-      # ffn_output = ffn_baseline(outputs["hidden_states"], outputs["context_memory"])
-
-      # loss_difference = tf.subtract(r1_score_soft, ffn_output)
-      # reinforce_baseline = tf.reduce_sum(tf.multiply(loss_difference, softmax_logp))
-
-      # constraint = tf.random_uniform(shape=(), minval=0, maxval=1, dtype=tf.float32)
-      # combined_loss = tf.cond(constraint > 0.8, lambda: reinforce_baseline, lambda: XENT_loss)
+      # intermediate_loss = tf.reduce_sum(tf.multiply(tf.subtract(0.3, -r1_score_hard), argmax_logp))
 
       ##### EXPECTED RISK MINIMISATION ##############################################################################
+      # TODO: functionalize
       # L_risk = -r(u,y)*p(u|x,theta) -> U(x) is a set of candidate translations
       # Calculate f_u for as many sequences
       # f_u_soft = tf.exp(tf.div(1.0, max_seq_len) * tf.reduce_sum(softmax_logp))
