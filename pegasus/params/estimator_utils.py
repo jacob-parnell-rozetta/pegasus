@@ -220,7 +220,7 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
 
       # RANDOMLY SAMPLE INDIVIDUAL TOKENS USING BEAM SEARCH FROM TOP-K DISTRIBUTION
       # topk_preds_dict, topk_scores = model_params.model().predict(features, max_seq_len, beam_size=_beam,
-      #                                                             top_k=0, top_p=0.0, temperature=1.0)
+      #                                                             top_k=10000, top_p=0.0, temperature=1.0)
       # topk_preds = topk_preds_dict["outputs"][0]  # gets the IDs
       # topk_preds2 = topk_preds_dict["outputs"][1]  # gets the IDs of second best
       # topk_score = topk_scores[:, 0]  # sentence score (sum of log_prob) for first
@@ -236,7 +236,7 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
 
       # RANDOMLY SAMPLE INDIVIDUAL TOKENS USING BEAM SEARCH FROM TOP-P DISTRIBUTION
       # topp_preds_dict, topp_scores = model_params.model().predict(features, max_seq_len, beam_size=_beam,
-      #                                                             top_k=0, top_p=0.0, temperature=1.0)
+      #                                                             top_k=0, top_p=0.9, temperature=1.0)
       # topp_preds = topp_preds_dict["outputs"][0]  # gets the IDs
       # topp_preds2 = topp_preds_dict["outputs"][1]  # gets the IDs of second best
       # topp_score = topp_scores[:, 0]  # sentence score (sum of log_prob) for first
