@@ -32,6 +32,37 @@ def create_variables(z, logp, batch_index, sequence_index, clipped_logit_probs):
     return z_tilde, logp_b
 
 
+def create_variables_from_samples(sample_z, sample_b, batch_index, sequence_index):
+    """
+    Create the variables for RELAX control variate
+    :param sample_z: [B,T,V] tensor containing sampled processed logits created by stacking logits during
+                    decoding loop of sampling process
+    :param sample_b: the [B,T] tensor containing the H(z) indices (Gumbel-Max)
+    :param batch_index: [B,T] tensor of the batch size repeated for seq len
+    :param sequence_index: [B,T] tensor of range(0, seq len)
+    :return: z_tilde, and logp(b) for equation
+    """
+    v = tf.random_uniform(shape=sample_z.get_shape().as_list(),
+                          minval=1e-8,
+                          maxval=1,
+                          dtype=tf.float32)
+
+    # create index tensor where b is the argmax, to use as indexer for substitution
+    b_new = tf.squeeze(sample_b, 0)
+    index_tensor_b = tf.expand_dims(tf.stack([batch_index, sequence_index, b_new], axis=1), 0)
+
+    v_b = tf.gather_nd(v, index_tensor_b)  # values of v where b are the argmax indexes
+    update = -tf.log(-tf.log(v_b))  # for i == b
+
+    # create z_tilde as for the case where i != b
+    clipped_logit_probs = tf.clip_by_value(tf.math.softmax(sample_z), 1e-8, 1.0)
+    z_tilde = -tf.log(-tf.div(tf.log(v), clipped_logit_probs) - tf.expand_dims(tf.log(v_b), 2))
+    z_tilde = tf.tensor_scatter_nd_update(z_tilde, index_tensor_b, update)
+
+    logp_b = tf.gather_nd(sample_z, index_tensor_b)  # used in loss func
+    return z_tilde, logp_b
+
+
 def create_cv_target(outputs, batch_index, sequence_index, z, z_tilde):
     """
     Converts the target IDs to probabilities from [B,T,V] tensor of z defined in above function.

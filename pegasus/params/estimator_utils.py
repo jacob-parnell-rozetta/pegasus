@@ -25,7 +25,7 @@ from pegasus.models.control_variate import ffn_baseline, control_variate, Q_func
 from pegasus.methods.decoder_sampling import iid_sampling, beam_sampling, non_beam_sampling
 from pegasus.methods.reinforce import rouge_decoding, iid_log_probs
 from pegasus.methods.risk import risk_loss
-from pegasus.methods.relax import create_variables, create_cv_target
+from pegasus.methods.relax import create_variables, create_cv_target, create_variables_from_samples
 from tensor2tensor.utils import adafactor
 import tensorflow as tf
 
@@ -205,7 +205,12 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       #     model_params, features, max_seq_len, beam_params=topp_beam_params)
 
       ##### RELAX VARIABLES #########################################################################################
+      # FROM TRADITIONAL DECODER
       # z_tilde, logp_b = create_variables(z, logp, batch_index, sequence_index, clipped_logit_probs)
+      # FROM DECODER SAMPLING PROCESS
+      # z_tilde, logp_b = create_variables_from_samples(random_logits, random_preds, batch_index, sequence_index)
+      # FROM BEAM SEARCH SAMPLING
+      # z_tilde, logp_b = create_variables_from_samples(random_logits, random_preds, batch_index, sequence_index)
 
       ##### TEXT AND ROUGE ##########################################################################################
       # target_text = rouge_decoding(outputs["targets"], model_params)  # TARGET SAMPLES
@@ -281,8 +286,9 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # d_c_z_tilde_d_theta = tf.gradients(c_z_tilde, theta)[0]
       # d_c_z_d_theta = tf.gradients(c_z, theta)[0]
 
-      # TODO: [1, 32] * [96103, 1024]
+      # TODO: c_z_tilde must be scalar to calculate this, otherwise size error is an issue
       # relax = tf.reduce_sum(f_y - c_z_tilde)*d_logp_d_theta - d_c_z_tilde_d_theta + d_c_z_d_theta
+      # relax = tf.gradients(L_relax, theta)[0]  # will this work?
 
       # Calculate the first optimization step with loss
       # list_of_gradient_variable_pairs = optimizer.compute_gradients(L_relax)
