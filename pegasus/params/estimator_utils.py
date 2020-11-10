@@ -160,8 +160,6 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # clipped_logit_probs = tf.clip_by_value(logit_probs, 1e-8, 1.0)
       # logp = tf.log(clipped_logit_probs)
 
-      # ALWAYS RETURN Z FOR RELAX
-      # _, _, _, z = iid_sampling(logp, max_seq_len, greedy=False, soft=True, topk=False)
       # TO RETURN MORE THAN ONE DECODER SAMPLE
       # argmax_logp_index, soft_logp_index, topk_out, z = iid_sampling(logp, max_seq_len, greedy=True, soft=True,
       #                                                                topk=True, k=2)
@@ -276,7 +274,7 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       #     c_z_tilde = Q_func(z_tilde, zt_target)
 
       # Formulate RELAX as a loss function
-      # f_y = r1_score_soft  # negative for loss (defined above)
+      # f_y = rouge_loss_soft  # negative for loss (defined above)
       # c_z_tilde1 = tf.stop_gradient(tf.identity(c_z_tilde))  # clone, detach, stop grad
       # L_relax = tf.reduce_sum(((f_y - c_z_tilde1)*logp_b) - c_z_tilde + c_z)
 

@@ -67,7 +67,6 @@ def control_variate(input):
 
 
 def Q_func(z, target):
-    assert tf.shape(z) == tf.shape(target)  # will fail if not the same size [BxTxV]
     combined = tf.concat([z, target], axis=1)  # concat([BxTxV, BxTxV], 1) -> [Bx2Tx2V]
 
     h1 = tf.layers.dense(2. * combined - 1., 1024, tf.nn.relu, name="q_1", use_bias=True)
