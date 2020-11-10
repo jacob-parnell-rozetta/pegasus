@@ -139,24 +139,31 @@ def left2right_decode(symbols_to_logits_fn,
   # In this case, alpha value for length penalty will take effect.
   if beam_size == 1:
 
-    def decode_loop(i, decodes_BxT, cache_BxU_dict, log_BxT):
+    def decode_loop(i, decodes_BxT, cache_BxU_dict, log_BxT, log_BxTxV):
       logits_BxV = symbols_to_logits_fn(decodes_BxT, cache_BxU_dict, i)
       logits_BxV = process_logits(logits_BxV, top_k, top_p, temperature)
       decodes_BxT = inplace_update_i(decodes_BxT, tf.argmax(logits_BxV, -1), i)
       logits_BxT = inplace_update_i(log_BxT, tf.broadcast_to(tf.reduce_max(logits_BxV), [1, ]), i)
-      return i + 1, decodes_BxT, cache_BxU_dict, logits_BxT
+      logits_BxTxV = log_BxTxV.append(logits_BxV)  # to get a BxTxV tensor of decoding loop
+      return i + 1, decodes_BxT, cache_BxU_dict, logits_BxT, logits_BxTxV
 
-    def loop_cond(i, decodes_BxT, unused_cache_BxU_dict, unused_log_BxT):
+    def loop_cond(i, decodes_BxT, unused_cache_BxU_dict, unused_log_BxT, unused_log_BxTxV):
       finished_B = tf.reduce_any(tf.equal(decodes_BxT, EOS_ID), axis=1)
       return tf.logical_and(i < max_decode_len,
                             tf.logical_not(tf.reduce_all(finished_B)))
 
     init_dec_BxT = tf.zeros([batch_size, max_decode_len], dtype=dtype)
     init_log_BxT = tf.zeros([batch_size, max_decode_len], dtype=tf.float32)  # add as placeholder for vars
-    _, decodes, _, logits_BxT = tf.while_loop(
+    init_log_BxTxV = []  # empty list
+    _, decodes, _, logits_BxT, logits_BxTxV = tf.while_loop(
         loop_cond, decode_loop,
-        [tf.constant(0, dtype=dtype), init_dec_BxT, context_BxU_dict, init_log_BxT])
-    return decodes, logits_BxT
+        [tf.constant(0, dtype=dtype), init_dec_BxT, context_BxU_dict, init_log_BxT, init_log_BxTxV])
+
+    # if log_BxTxV is not of max seq len, need to pad - add zeros
+    if len(logits_BxTxV) != max_decode_len:
+        for i in range(max_decode_len - len(logits_BxTxV)):
+            logits_BxTxV.append(tf.zeros([batch_size, vocab_size], dtype=tf.float32))
+    return decodes, logits_BxT, tf.stack(logits_BxTxV, axis=1)
 
   else:
 
@@ -176,6 +183,6 @@ def left2right_decode(symbols_to_logits_fn,
     for i in range(beam_size):
         beam_dict[i] = tf.cast(beams[:, i, :], dtype)
 
-    return beam_dict, scores
+    return beam_dict, scores, None
     # always returns the first beam
     # return tf.cast(beams[:, 0, :], dtype)

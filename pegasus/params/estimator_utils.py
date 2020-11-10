@@ -101,7 +101,7 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
 
     # PREDICTION (e.g. evaluate)
     if mode == tf.estimator.ModeKeys.PREDICT:
-      predictions, _ = model_params.estimator_prediction_fn(features)
+      predictions, _, _ = model_params.estimator_prediction_fn(features)
 
       if include_features_in_predictions:
         predictions.update(features)
@@ -173,19 +173,19 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # topk_beam_params = {"top_k": 10000, "top_p": 0.0, "temperature": 0.0}
       # topp_beam_params = {"top_k": 0, "top_p": 0.9, "temperature": 0.0}
 
-      # PREDS: IDs, LOGP: transformed logits, SCORE: scalar sentence score using RISK trick
-      # greedy_preds, greedy_logp, greedy_score = non_beam_sampling(model_params, features, max_seq_len,
-      #                                                             beam_params=greedy_beam_params,
-      #                                                             sentence_score=False)
-      # random_preds, random_logp, random_score = non_beam_sampling(model_params, features, max_seq_len,
-      #                                                             beam_params=random_beam_params,
-      #                                                             sentence_score=False)
-      # topk_preds, topk_logp, topk_score = non_beam_sampling(model_params, features, max_seq_len,
-      #                                                       beam_params=topk_beam_params,
-      #                                                       sentence_score=False)
-      # topp_preds, topp_logp, topp_score = non_beam_sampling(model_params, features, max_seq_len,
-      #                                                       beam_params=topp_beam_params,
-      #                                                       sentence_score=False)
+      # PREDS: IDs, LOGP: transformed logits, SCORE: scalar score using RISK trick, LOGITS: [BxTxV] beam logits
+      # greedy_preds, greedy_logp, greedy_score, greedy_logits = non_beam_sampling(model_params, features, max_seq_len,
+      #                                                                            beam_params=greedy_beam_params,
+      #                                                                            sentence_score=False)
+      # random_preds, random_logp, random_score, random_logits = non_beam_sampling(model_params, features, max_seq_len,
+      #                                                                            beam_params=random_beam_params,
+      #                                                                            sentence_score=False)
+      # topk_preds, topk_logp, topk_score, topk_logits = non_beam_sampling(model_params, features, max_seq_len,
+      #                                                                    beam_params=topk_beam_params,
+      #                                                                    sentence_score=False)
+      # topp_preds, topp_logp, topp_score, topp_logits = non_beam_sampling(model_params, features, max_seq_len,
+      #                                                                    beam_params=topp_beam_params,
+      #                                                                    sentence_score=False)
 
       ##### BEAM SEARCH #############################################################################################
       # greedy_beam_params = {"_beam": 2, "top_k": 0, "top_p": 0.0, "temperature": 0.0}
