@@ -1,21 +1,21 @@
 import tensorflow as tf
 
 
-def risk_loss(max_seq_len, rouge_losses=None, logits=None, n=2):
+def risk_loss(max_seq_len, rouge_losses=None, logps=None, n=2):
     """
     Calculates the expected risk minimisation loss, given by:
     L_risk = -r(u,y)*p(u|x,theta) -> U(x) is a set of candidate translations
     :param max_seq_len: the maximum sequence length for a given dataset
     :param rouge_losses: the rouge losses that will be used for this loss
-    :param logits: the logits that are derived from the beam search algorithm. If beam_size > 1, the returned logits
-                    value from the beam will be a score anyway (will not affect the equation
+    :param logps: the logp that are derived from the beam search algorithm. If beam_size > 1, the returned logp
+                    value from the beam will be a score anyway (will not affect the equation)
     :param n: the number of samples to pass into the loss
     :return: Scalar value denoting the risk loss
     """
     if n == 2:
         # Calculate f_u for as many sequences
-        f_u_1 = tf.exp((1.0 / max_seq_len) * tf.reduce_sum(logits[0]))
-        f_u_2 = tf.exp((1.0 / max_seq_len) * tf.reduce_sum(logits[1]))
+        f_u_1 = tf.exp((1.0 / max_seq_len) * tf.reduce_sum(logps[0]))
+        f_u_2 = tf.exp((1.0 / max_seq_len) * tf.reduce_sum(logps[1]))
 
         # Calculate p_u for as many sequences
         p_u_1 = f_u_1 / tf.reduce_sum([f_u_1, f_u_2])
@@ -31,9 +31,9 @@ def risk_loss(max_seq_len, rouge_losses=None, logits=None, n=2):
 
     elif n == 3:
         # Calculate f_u for as many sequences
-        f_u_1 = tf.exp((1.0 / max_seq_len) * tf.reduce_sum(logits[0]))
-        f_u_2 = tf.exp((1.0 / max_seq_len) * tf.reduce_sum(logits[1]))
-        f_u_3 = tf.exp((1.0 / max_seq_len) * tf.reduce_sum(logits[2]))
+        f_u_1 = tf.exp((1.0 / max_seq_len) * tf.reduce_sum(logps[0]))
+        f_u_2 = tf.exp((1.0 / max_seq_len) * tf.reduce_sum(logps[1]))
+        f_u_3 = tf.exp((1.0 / max_seq_len) * tf.reduce_sum(logps[2]))
 
         # Calculate p_u for as many sequences
         p_u_1 = f_u_1 / tf.reduce_sum([f_u_1, f_u_2, f_u_3])

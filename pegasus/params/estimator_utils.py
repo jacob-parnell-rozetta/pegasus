@@ -172,18 +172,22 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # topp_beam_params = {"top_k": 0, "top_p": 0.9, "temperature": 0.0}
 
       # PREDS: IDs, LOGP: transformed logits, SCORE: scalar score using RISK trick, LOGITS: [BxTxV] beam logits
-      # greedy_preds, greedy_logp, greedy_score, greedy_logits = non_beam_sampling(model_params, features, max_seq_len,
-      #                                                                            beam_params=greedy_beam_params,
-      #                                                                            sentence_score=False)
-      # random_preds, random_logp, random_score, random_logits = non_beam_sampling(model_params, features, max_seq_len,
-      #                                                                            beam_params=random_beam_params,
-      #                                                                            sentence_score=False)
-      # topk_preds, topk_logp, topk_score, topk_logits = non_beam_sampling(model_params, features, max_seq_len,
-      #                                                                    beam_params=topk_beam_params,
-      #                                                                    sentence_score=False)
-      # topp_preds, topp_logp, topp_score, topp_logits = non_beam_sampling(model_params, features, max_seq_len,
-      #                                                                    beam_params=topp_beam_params,
-      #                                                                    sentence_score=False)
+      # Note: the logp_BxTxV are analogous to z -> should be used for RELAX, preds are the BxT of these -> b=H(z), and
+      # logp are the corresponding values (score is normalised to sentence score)
+      # greedy_preds, greedy_logp, greedy_score, greedy_logp_BxTxV = non_beam_sampling(model_params, features,
+      #                                                                                max_seq_len,
+      #                                                                                beam_params=greedy_beam_params,
+      #                                                                                sentence_score=False)
+      # random_preds, random_logp, random_score, random_logp_BxTxV = non_beam_sampling(model_params, features,
+      #                                                                                max_seq_len,
+      #                                                                                beam_params=random_beam_params,
+      #                                                                                sentence_score=False)
+      # topk_preds, topk_logp, topk_score, topk_logp_BxTxV = non_beam_sampling(model_params, features, max_seq_len,
+      #                                                                        beam_params=topk_beam_params,
+      #                                                                        sentence_score=False)
+      # topp_preds, topp_logp, topp_score, topp_logp_BxTxV = non_beam_sampling(model_params, features, max_seq_len,
+      #                                                                        beam_params=topp_beam_params,
+      #                                                                        sentence_score=False)
 
       ##### BEAM SEARCH #############################################################################################
       # greedy_beam_params = {"_beam": 2, "top_k": 0, "top_p": 0.0, "temperature": 0.0}

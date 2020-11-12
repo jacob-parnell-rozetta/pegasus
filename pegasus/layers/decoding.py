@@ -139,31 +139,34 @@ def left2right_decode(symbols_to_logits_fn,
   # In this case, alpha value for length penalty will take effect.
   if beam_size == 1:
 
-    def decode_loop(i, decodes_BxT, cache_BxU_dict, log_BxT, log_BxTxV):
+    def decode_loop(i, decodes_BxT, cache_BxU_dict, logp_BxT, logp_BxTxV):
       logits_BxV = symbols_to_logits_fn(decodes_BxT, cache_BxU_dict, i)
       logits_BxV = process_logits(logits_BxV, top_k, top_p, temperature)
-      decodes_BxT = inplace_update_i(decodes_BxT, tf.argmax(logits_BxV, -1), i)
-      logits_BxT = inplace_update_i(log_BxT, tf.broadcast_to(tf.reduce_max(logits_BxV), [1, ]), i)
-      logits_BxTxV = log_BxTxV.append(logits_BxV)  # to get a BxTxV tensor of decoding loop
-      return i + 1, decodes_BxT, cache_BxU_dict, logits_BxT, logits_BxTxV
+      logp_BxV = tf.log(tf.clip_by_value(tf.math.softmax(logits_BxV, axis=1), 1e-8, 1.0))  # to log_p
+      decodes_BxT = inplace_update_i(decodes_BxT, tf.argmax(logits_BxV, -1), i)  # ids of argmax(logits)
+      # add this -> [B,T] of logp values
+      logp_BxT = inplace_update_i(logp_BxT, tf.broadcast_to(tf.reduce_max(logp_BxV), [1, ]), i)
+      # add this to return [B,T,V] logp tensor -> used as the z for RELAX
+      logp_BxTxV = inplace_update_i(logp_BxTxV, logp_BxT, i)  # to get a BxTxV tensor of decoding loop
+      return i + 1, decodes_BxT, cache_BxU_dict, logp_BxT, logp_BxTxV
 
-    def loop_cond(i, decodes_BxT, unused_cache_BxU_dict, unused_log_BxT, unused_log_BxTxV):
+    def loop_cond(i, decodes_BxT, unused_cache_BxU_dict, unused_logp_BxT, unused_logp_BxTxV):
       finished_B = tf.reduce_any(tf.equal(decodes_BxT, EOS_ID), axis=1)
       return tf.logical_and(i < max_decode_len,
                             tf.logical_not(tf.reduce_all(finished_B)))
 
     init_dec_BxT = tf.zeros([batch_size, max_decode_len], dtype=dtype)
-    init_log_BxT = tf.zeros([batch_size, max_decode_len], dtype=tf.float32)  # add as placeholder for vars
-    init_log_BxTxV = []  # empty list
-    _, decodes, _, logits_BxT, logits_BxTxV = tf.while_loop(
+    init_logp_BxT = tf.zeros([batch_size, max_decode_len], dtype=tf.float32)  # add as placeholder for vars
+    init_logp_BxTxV = tf.zeros([batch_size, max_decode_len, vocab_size], dtype=tf.float32)
+    _, decodes, _, logp_BxT, logp_BxTxV = tf.while_loop(
         loop_cond, decode_loop,
-        [tf.constant(0, dtype=dtype), init_dec_BxT, context_BxU_dict, init_log_BxT, init_log_BxTxV])
+        [tf.constant(0, dtype=dtype), init_dec_BxT, context_BxU_dict, init_logp_BxT, init_logp_BxTxV])
 
     # if log_BxTxV is not of max seq len, need to pad - add zeros
-    if len(logits_BxTxV) != max_decode_len:
-        for i in range(max_decode_len - len(logits_BxTxV)):
-            logits_BxTxV.append(tf.zeros([batch_size, vocab_size], dtype=tf.float32))
-    return decodes, logits_BxT, tf.stack(logits_BxTxV, axis=1)
+    # if len(logp_BxTxV) != max_decode_len:
+    #     for i in range(max_decode_len - len(logp_BxTxV)):
+    #         logp_BxTxV.append(tf.zeros([batch_size, vocab_size], dtype=tf.float32))
+    return decodes, logp_BxT, logp_BxTxV
 
   else:
 
@@ -179,6 +182,7 @@ def left2right_decode(symbols_to_logits_fn,
         tf.zeros([batch_size, max_decode_len], dtype=tf.int32),
         context_BxU_dict, vocab_size, beam_size, length_norm_fn, eos_id)
 
+    # add this to return all beams, not just first
     beam_dict = {}
     for i in range(beam_size):
         beam_dict[i] = tf.cast(beams[:, i, :], dtype)
