@@ -149,8 +149,8 @@ def left2right_decode(symbols_to_logits_fn,
         logp_BxV = tf.log(tf.clip_by_value(tf.math.softmax(logits_BxV, axis=1), 1e-8, 1.0))  # to log_p
         # add this -> [B,T] of logp values
         logp_BxT = inplace_update_i(logp_BxT, tf.broadcast_to(tf.reduce_max(logp_BxV), [1, ]), i)
-        # add this to return [B,T,V] logp tensor -> used as the z for RELAX
-        logp_BxTxV = inplace_update_i(logp_BxTxV, logp_BxT, i)  # to get a BxTxV tensor of decoding loop
+        # add this to update [B,T,V] logp tensor with prob dist along V for that token -> used as the z for RELAX
+        logp_BxTxV = inplace_update_i(logp_BxTxV, logp_BxV, i)  # to get a BxTxV tensor of decoding loop
       else:
           logp_BxT, logp_BxTxV = None, None
       return i + 1, decodes_BxT, cache_BxU_dict, logp_BxT, logp_BxTxV
