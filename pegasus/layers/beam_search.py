@@ -116,7 +116,7 @@ def beam_search(symbols_to_logits_fn,
     # Added this to separate the logp at each loop, per beam split -> separates into M * BxTxV tensors
     logpM1_BxTxV, logpM2_BxTxV, logpM3_BxTxV = _separate(log_probs_BxMxV,
                                                          [init_finished_logpM1_BxTxV, init_finished_logpM2_BxTxV,
-                                                          init_finished_logpM3_BxTxV], M, i)
+                                                          init_finished_logpM3_BxTxV], B, T, V, M, i)
     log_probs_BxMxV += tf.expand_dims(alive_log_probs_BxM, axis=2)
     log_probs_BxMV = tf.reshape(log_probs_BxMxV, [B, -1])
     new_log_probs_Bx2M, topk_indices_Bx2M = tf.nn.top_k(log_probs_BxMV, k=2 * M)
@@ -246,14 +246,15 @@ def _inplace_update_i(tensor_BxL, updates_B, i):
   return tf.tensor_scatter_nd_update(tensor_BxL, indices_Bx2, updates_B)
 
 
-def _separate(logp_BxMxV, logpMi_BxTxV, M, i):
+def _separate(logp_BxMxV, logpMi_BxTxV, B, T, V, M, i):
     if M == 2:
         logpM1_BxV = logp_BxMxV[0, 0]
         logpM2_BxV = logp_BxMxV[0, 1]
         logpM1_BxTxV = _inplace_update_i(logpMi_BxTxV[0], tf.expand_dims(logpM1_BxV, 0), i)
         logpM2_BxTxV = _inplace_update_i(logpMi_BxTxV[1], tf.expand_dims(logpM2_BxV, 0), i)
 
-        return logpM1_BxTxV, logpM2_BxTxV, None
+        # return empty tensor for 3rd beam
+        return logpM1_BxTxV, logpM2_BxTxV, tf.zeros([B, T, V])
 
     elif M == 3:
         logpM1_BxV = logp_BxMxV[0, 0]

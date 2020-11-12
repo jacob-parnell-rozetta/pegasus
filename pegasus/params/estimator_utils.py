@@ -150,9 +150,9 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       ###############################################################################################################
       ##### VARIABLES ###############################################################################################
       # Create index tensors to stack and get corresponding probabilities from logp
-      # max_seq_len = outputs["targets"].get_shape().as_list()[1]
-      # sequence_index = tf.constant(np.arange(0, max_seq_len))
-      # batch_index = tf.constant(np.zeros(sequence_index.get_shape().as_list()[0]), dtype=tf.int64)
+      max_seq_len = outputs["targets"].get_shape().as_list()[1]
+      sequence_index = tf.constant(np.arange(0, max_seq_len))
+      batch_index = tf.constant(np.zeros(sequence_index.get_shape().as_list()[0]), dtype=tf.int64)
 
       ##### I.I.D SAMPLING ##########################################################################################
       # Normalise logits to log-prob, and compute Gumbel samples with location
@@ -192,30 +192,30 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
 
       # PREDS: IDs, SCORE: scalar sentence score returned as sum of logp from beam search
       # {ids1, sent_score1, ...} and {beam_1logp, beam_2logp, beam_1logp}
-      # greedy_dict, greedy_logp_dict = beam_sampling(model_params, features, max_seq_len,
+      # greedy_dict, greedy_logp_dict = beam_sampling(model_params, features, max_seq_len, batch_index, sequence_index,
       #                                               beam_params=greedy_beam_params)
-      # random_dict, random_logp_dict = beam_sampling(model_params, features, max_seq_len,
+      # random_dict, random_logp_dict = beam_sampling(model_params, features, max_seq_len, batch_index, sequence_index,
       #                                               beam_params=random_beam_params)
-      # topk_dict, topk_logp_dict = beam_sampling(model_params, features, max_seq_len,
+      # topk_dict, topk_logp_dict = beam_sampling(model_params, features, max_seq_len, batch_index, sequence_index,
       #                                           beam_params=topk_beam_params)
-      # topp_dict, topp_logp_dict = beam_sampling(model_params, features, max_seq_len,
+      # topp_dict, topp_logp_dict = beam_sampling(model_params, features, max_seq_len, batch_index, sequence_index,
       #                                           beam_params=topp_beam_params)
 
       ##### RELAX VARIABLES #########################################################################################
       # FROM TRADITIONAL DECODER
       # z_tilde, logp_b = create_variables(z, logp, batch_index, sequence_index, clipped_logit_probs)
       # FROM DECODER SAMPLING PROCESS
-      # z_tilde, logp_b = create_variables_from_samples(random_dict["logp_BxTxV"],
-      #                                                 random_dict["logp_BxT"], batch_index, sequence_index)
+      # z_tilde, logp_b = create_variables_from_samples(random_dict["logp_BxTxV"]["beam1_logp"],
+      #                                                 random_dict["ids"], batch_index, sequence_index)
       # FROM BEAM SEARCH SAMPLING
       # z_tilde, logp_b = create_variables_from_samples(random_logp_dict["beam_1logp"],
-      #                                                 random_dict["ids1"], batch_index, sequence_index)
+      #                                                random_dict["ids1"], batch_index, sequence_index)
 
       ##### TEXT AND ROUGE ##########################################################################################
       # target_text = rouge_decoding(outputs["targets"], model_params)  # TARGET SAMPLES
-      # argmax_pred_text = rouge_decoding(greedy_dict["logp_BxT"], model_params)  # ARGMAX SAMPLES
-      # soft_pred_text = rouge_decoding(random_dict["logp_BxT"], model_params)  # SOFTMAX SAMPLES
-      # additional_pred_text = rouge_decoding(topk_dict["logp_BxT"], model_params)  # ADDITIONAL SAMPLES
+      # argmax_pred_text = rouge_decoding(greedy_dict["ids"], model_params)  # ARGMAX SAMPLES
+      # soft_pred_text = rouge_decoding(random_dict["ids1"], model_params)  # SOFTMAX SAMPLES
+      # additional_pred_text = rouge_decoding(topk_dict["ids"], model_params)  # ADDITIONAL SAMPLES
 
       # CALCULATE ROUGE LOSS: ROUGE score -> ROUGE loss = -ROUGE score
       # NOTE: for ROUGE variant, change value (0: precision, 1: recall, 2: f1)
@@ -234,7 +234,7 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
 
       # CHANGE BELOW IF USING DECODER SAMPLED TOKENS/SCORES
       # weight the logp by ROUGE score (neg ROUGE_loss), sum values
-      # reinforce_loss = tf.reduce_sum(tf.multiply(r1_score_hard, argmax_logp))
+      # reinforce_loss = tf.reduce_sum(tf.multiply(rouge_loss_soft, random_dict["logp1"]))
 
       ##### REINFORCE w/ BASELINE ###################################################################################
       # Socher (2017)

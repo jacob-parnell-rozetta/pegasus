@@ -47,12 +47,14 @@ def iid_sampling(logp, max_seq_len, greedy=True, soft=False, topk=False, k=2):
     return argmax_logp_index, sample_y, topk_out, z
 
 
-def beam_sampling(model_params, features, max_seq_len, beam_params):
+def beam_sampling(model_params, features, max_seq_len, batch_index, sequence_index, beam_params):
     """
     Uses Beam Search to sample the decoder using various different sampling methods, defined in pegasus.layers.decoding
     :param model_params: parameters for the PEGASUS model
     :param features: inputs and targets dict
     :param max_seq_len: the maximum sequence length for given dataset
+    :param batch_index: batch index for indexing
+    :param sequence_index: corresponding token
     :param beam_params: parameters for sampling method, beam size should be no bigger than 3 (memory)
     :return: IDs returned by beam search, and the respective sum(logp) score for that sequence, soon: logp_BxMxTxV
     """
@@ -65,18 +67,38 @@ def beam_sampling(model_params, features, max_seq_len, beam_params):
                                                                             sampling=True)
     preds = preds_dict["outputs"][0]  # gets the IDs
     preds_score = preds_scores[:, 0]  # sentence score (sum of log_prob) for first
+    logp1_BxTxV = beam_logp_dict["beam_1logp"]  # [B,T,V] tensor we need to index with IDs
+    index_tensor1 = tf.stack([batch_index, sequence_index, logp1_BxTxV], axis=1)
+    logp1_BxT = tf.gather_nd(logp1_BxTxV, index_tensor1)  # extract logps at ids
+
     preds2, preds_score2, preds3, preds_score3 = None, None, None, None
+    logp2_BxT, logp3_BxT = None, None
 
     if beam_params["_beam"] == 2:
         preds2 = preds_dict["outputs"][1]  # gets the IDs of second best
         preds_score2 = preds_scores[:, 1]  # sentence score (sum of log_prob) for second
+        logp2_BxTxV = beam_logp_dict["beam_2logp"]  # [B,T,V] tensor we need to index with IDs
+        index_tensor2 = tf.stack([batch_index, sequence_index, logp2_BxTxV], axis=1)
+
+        logp2_BxT = tf.gather_nd(logp2_BxTxV, index_tensor2)  # extract logps at ids
+        logp3_BxT = None
+
     elif beam_params["_beam"] == 3:
+        preds2 = preds_dict["outputs"][1]  # gets the IDs of second best
+        preds_score2 = preds_scores[:, 1]  # sentence score (sum of log_prob) for second
         preds3 = preds_dict["outputs"][2]  # gets the IDs of third best
         preds_score3 = preds_scores[:, 2]  # sentence score (sum of log_prob) for third
 
-    return {"ids1": preds, "sent_score1": preds_score,
-            "ids2": preds2, "sent_score2": preds_score2,
-            "ids3": preds3, "sent_score3": preds_score3}, beam_logp_dict
+        logp2_BxTxV = beam_logp_dict["beam_2logp"]  # [B,T,V] tensor we need to index with IDs
+        index_tensor2 = tf.stack([batch_index, sequence_index, logp2_BxTxV], axis=1)
+        logp2_BxT = tf.gather_nd(logp2_BxTxV, index_tensor2)  # extract logps at ids
+        logp3_BxTxV = beam_logp_dict["beam_3logp"]  # [B,T,V] tensor we need to index with IDs
+        index_tensor3 = tf.stack([batch_index, sequence_index, logp3_BxTxV], axis=1)
+        logp3_BxT = tf.gather_nd(logp3_BxTxV, index_tensor3)  # extract logps at ids
+
+    return {"ids1": preds, "sent_score1": preds_score, "logp1": logp1_BxT,
+            "ids2": preds2, "sent_score2": preds_score2, "logp2": logp2_BxT,
+            "ids3": preds3, "sent_score3": preds_score3, "logp3": logp3_BxT}, beam_logp_dict
 
 
 def non_beam_sampling(model_params, features, max_seq_len, beam_params, sentence_score=False):
@@ -104,4 +126,5 @@ def non_beam_sampling(model_params, features, max_seq_len, beam_params, sentence
         score = tf.exp((1 / max_seq_len) * tf.reduce_sum(preds_logp_BxT))  # sentence score 0-1
     else:
         score = None
-    return {"ids": preds, "logp_BxT": preds_logp_BxT, "sent_score": score, "logp_BxTxV": preds_logp_BxTxV}
+    return {"ids": tf.reshape(preds, [model_params.batch_size, max_seq_len]),
+            "logp_BxT": preds_logp_BxT, "sent_score": score, "logp_BxTxV": preds_logp_BxTxV}
