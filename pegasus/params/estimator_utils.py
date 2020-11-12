@@ -171,23 +171,18 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # topk_beam_params = {"top_k": 10000, "top_p": 0.0, "temperature": 0.0}
       # topp_beam_params = {"top_k": 0, "top_p": 0.9, "temperature": 0.0}
 
-      # PREDS: IDs, LOGP: transformed logits, SCORE: scalar score using RISK trick, LOGITS: [BxTxV] beam logits
+      # PREDS: IDs, LOGP: transformed logits, SCORE: scalar score using RISK trick, LOGP: [BxTxV] beam logp
+      # {ids, logp_BxT, sent_score, logp_BxTxV}
       # Note: the logp_BxTxV are analogous to z -> should be used for RELAX, preds are the BxT of these -> b=H(z), and
       # logp are the corresponding values (score is normalised to sentence score)
-      # greedy_preds, greedy_logp, greedy_score, greedy_logp_BxTxV = non_beam_sampling(model_params, features,
-      #                                                                                max_seq_len,
-      #                                                                                beam_params=greedy_beam_params,
-      #                                                                                sentence_score=False)
-      # random_preds, random_logp, random_score, random_logp_BxTxV = non_beam_sampling(model_params, features,
-      #                                                                                max_seq_len,
-      #                                                                                beam_params=random_beam_params,
-      #                                                                                sentence_score=False)
-      # topk_preds, topk_logp, topk_score, topk_logp_BxTxV = non_beam_sampling(model_params, features, max_seq_len,
-      #                                                                        beam_params=topk_beam_params,
-      #                                                                        sentence_score=False)
-      # topp_preds, topp_logp, topp_score, topp_logp_BxTxV = non_beam_sampling(model_params, features, max_seq_len,
-      #                                                                        beam_params=topp_beam_params,
-      #                                                                        sentence_score=False)
+      # greedy_dict = non_beam_sampling(model_params, features, max_seq_len,
+      #                                 beam_params=greedy_beam_params, sentence_score=False)
+      # random_dict = non_beam_sampling(model_params, features, max_seq_len,
+      #                                 beam_params=random_beam_params, sentence_score=False)
+      # topk_dict = non_beam_sampling(model_params, features, max_seq_len,
+      #                               beam_params=topk_beam_params, sentence_score=False)
+      # topp_dict = non_beam_sampling(model_params, features, max_seq_len,
+      #                               beam_params=topp_beam_params, sentence_score=False)
 
       ##### BEAM SEARCH #############################################################################################
       # greedy_beam_params = {"_beam": 2, "top_k": 0, "top_p": 0.0, "temperature": 0.0}
@@ -196,29 +191,31 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # topp_beam_params = {"_beam": 2, "top_k": 0, "top_p": 0.9, "temperature": 1.0}
 
       # PREDS: IDs, SCORE: scalar sentence score returned as sum of logp from beam search
-      # 1, 2, 3 -> number of candidates returned
-      # greedy_preds, greedy_score, greedy_preds2, greedy_score2, greedy_preds3, greedy_score3 = beam_sampling(
-      #     model_params, features, max_seq_len, beam_params=greedy_beam_params)
-      # random_preds, random_score, random_preds2, random_score2, random_preds3, random_score3 = beam_sampling(
-      #     model_params, features, max_seq_len, beam_params=random_beam_params)
-      # topk_preds, topk_score, topk_preds2, topk_score2, topk_preds3, topk_score3 = beam_sampling(
-      #     model_params, features, max_seq_len, beam_params=topk_beam_params)
-      # topp_preds, topp_score, topp_preds2, topp_score2, topp_preds3, topp_score3 = beam_sampling(
-      #     model_params, features, max_seq_len, beam_params=topp_beam_params)
+      # {ids1, sent_score1, ...} and {beam_1logp, beam_2logp, beam_1logp}
+      # greedy_dict, greedy_logp_dict = beam_sampling(model_params, features, max_seq_len,
+      #                                               beam_params=greedy_beam_params)
+      # random_dict, random_logp_dict = beam_sampling(model_params, features, max_seq_len,
+      #                                               beam_params=random_beam_params)
+      # topk_dict, topk_logp_dict = beam_sampling(model_params, features, max_seq_len,
+      #                                           beam_params=topk_beam_params)
+      # topp_dict, topp_logp_dict = beam_sampling(model_params, features, max_seq_len,
+      #                                           beam_params=topp_beam_params)
 
       ##### RELAX VARIABLES #########################################################################################
       # FROM TRADITIONAL DECODER
       # z_tilde, logp_b = create_variables(z, logp, batch_index, sequence_index, clipped_logit_probs)
       # FROM DECODER SAMPLING PROCESS
-      # z_tilde, logp_b = create_variables_from_samples(random_logits, random_preds, batch_index, sequence_index)
+      # z_tilde, logp_b = create_variables_from_samples(random_dict["logp_BxTxV"],
+      #                                                 random_dict["logp_BxT"], batch_index, sequence_index)
       # FROM BEAM SEARCH SAMPLING
-      # z_tilde, logp_b = create_variables_from_samples(random_logits, random_preds, batch_index, sequence_index)
+      # z_tilde, logp_b = create_variables_from_samples(random_logp_dict["beam_1logp"],
+      #                                                 random_dict["ids1"], batch_index, sequence_index)
 
       ##### TEXT AND ROUGE ##########################################################################################
       # target_text = rouge_decoding(outputs["targets"], model_params)  # TARGET SAMPLES
-      # argmax_pred_text = rouge_decoding(argmax_logp_index, model_params)  # ARGMAX SAMPLES
-      # soft_pred_text = rouge_decoding(b, model_params)  # SOFTMAX SAMPLES
-      # additional_pred_text = rouge_decoding(topk_preds, model_params)  # ADDITIONAL SAMPLES
+      # argmax_pred_text = rouge_decoding(greedy_dict["logp_BxT"], model_params)  # ARGMAX SAMPLES
+      # soft_pred_text = rouge_decoding(random_dict["logp_BxT"], model_params)  # SOFTMAX SAMPLES
+      # additional_pred_text = rouge_decoding(topk_dict["logp_BxT"], model_params)  # ADDITIONAL SAMPLES
 
       # CALCULATE ROUGE LOSS: ROUGE score -> ROUGE loss = -ROUGE score
       # NOTE: for ROUGE variant, change value (0: precision, 1: recall, 2: f1)

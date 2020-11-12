@@ -151,6 +151,6 @@ class TransformerEncoderDecoderModel(base.BaseModel):
       logits_BxV = tf.squeeze(logits_Bx1xV, axis=1)
       return logits_BxV
 
-    decodes_BxT, logp_BxT, logp_BxTxV = decoding.left2right_decode(symbols_to_logits_fn, cache, B, T,
-                                                                   V, beam_size, **beam_kwargs)
-    return {"outputs": decodes_BxT}, logp_BxT, logp_BxTxV
+    decodes_BxT, logp_BxT, logp_BxTxV_dict = decoding.left2right_decode(symbols_to_logits_fn, cache, B, T,
+                                                                        V, beam_size, **beam_kwargs)
+    return {"outputs": decodes_BxT}, logp_BxT, logp_BxTxV_dict

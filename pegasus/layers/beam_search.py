@@ -27,7 +27,7 @@ Mostly follows implementation in T2T. Several difference to pure beamsearch:
 Notations:
   B: batch_size, M: beam_size, T: max_decode_len, V: vocab_size, U: undefined
 """
-# 
+#
 # pylint: disable=invalid-name
 
 import tensorflow as tf
@@ -98,7 +98,8 @@ def beam_search(symbols_to_logits_fn,
   int_dtype = init_seq_BxT.dtype
 
   def _loop_body(i, alive_seq_BxMxT, alive_log_probs_BxM, alive_cache_BxMxU,
-                 finished_seq_BxMxT, finished_scores_BxM):
+                 finished_seq_BxMxT, finished_scores_BxM,
+                 init_finished_logpM1_BxTxV, init_finished_logpM2_BxTxV, init_finished_logpM3_BxTxV):
     """Beam search loop body."""
     # Decode one step with beam
     logits_BMxV, cache_BMxU = symbols_to_logits_fn(
@@ -109,8 +110,13 @@ def beam_search(symbols_to_logits_fn,
                                             cache_BMxU)
 
     # select top 2 * beam_size and fill alive and finished.
+    # TODO: look into difference between this and the use of softmax for conversion to logp
     log_probs_BxMxV = logits_BxMxV - tf.reduce_logsumexp(
         logits_BxMxV, axis=2, keepdims=True)
+    # Added this to separate the logp at each loop, per beam split -> separates into M * BxTxV tensors
+    logpM1_BxTxV, logpM2_BxTxV, logpM3_BxTxV = _separate(log_probs_BxMxV,
+                                                         [init_finished_logpM1_BxTxV, init_finished_logpM2_BxTxV,
+                                                          init_finished_logpM3_BxTxV], M, i)
     log_probs_BxMxV += tf.expand_dims(alive_log_probs_BxM, axis=2)
     log_probs_BxMV = tf.reshape(log_probs_BxMxV, [B, -1])
     new_log_probs_Bx2M, topk_indices_Bx2M = tf.nn.top_k(log_probs_BxMV, k=2 * M)
@@ -140,12 +146,9 @@ def beam_search(symbols_to_logits_fn,
     (finished_seq_BxMxT, finished_scores_BxM) = _gather_nested(
         [finished_seq_Bx3MxT, finished_scores_Bx3M], topk_finished_indices_BxM)
 
-    # TODO: FUTURE - ADD RETURNED LOGITS/LOG PROBS FROM BEAM
-    # finished_logp_BxMxT = tf.zeros([[1, ]])
-
     return [
         i + 1, alive_seq_BxMxT, alive_log_probs_BxM, alive_cache_BxMxU,
-        finished_seq_BxMxT, finished_scores_BxM
+        finished_seq_BxMxT, finished_scores_BxM, logpM1_BxTxV, logpM2_BxTxV, logpM3_BxTxV
     ]
 
   # initialize.
@@ -156,18 +159,22 @@ def beam_search(symbols_to_logits_fn,
   init_alive_cache_BxMxU = tf.nest.map_structure(
       lambda t: _expand_to_beam_size(t, M), initial_cache_BxU)
   init_finished_seq_BxMxT = tf.zeros(tf.shape(init_alive_seq_BxMxT), int_dtype)
-  # init_finished_logp_BxMxT = tf.zeros(tf.shape(init_alive_seq_BxMxT), int_dtype)
+  init_finished_logpM1_BxTxV = tf.zeros([B, T, V], tf.float32)
+  init_finished_logpM2_BxTxV = tf.zeros([B, T, V], tf.float32)
+  init_finished_logpM3_BxTxV = tf.zeros([B, T, V], tf.float32)
   init_finished_scores_BxM = tf.zeros([B, M], dtype=dtype) + dtype.min
 
   # run loop.
   (_, final_alive_seq_BxMxT, final_alive_scores_BxM, _,
-   final_finished_seq_BxMxT, final_finished_scores_BxM) = tf.while_loop(
+   final_finished_seq_BxMxT, final_finished_scores_BxM,
+   logpM1_BxTxV, logpM2_BxTxV, logpM3_BxTxV) = tf.while_loop(
        lambda *args: True,  # Always do T iterations
        _loop_body,
        loop_vars=[
            init_i, init_alive_seq_BxMxT, init_alive_log_probs_BxM,
            init_alive_cache_BxMxU, init_finished_seq_BxMxT,
-           init_finished_scores_BxM
+           init_finished_scores_BxM,
+           init_finished_logpM1_BxTxV, init_finished_logpM2_BxTxV, init_finished_logpM3_BxTxV
        ],
        parallel_iterations=1,
        back_prop=False,
@@ -183,7 +190,8 @@ def beam_search(symbols_to_logits_fn,
   final_scores_BxM = tf.where(
       tf.squeeze(final_finished_flag_BxMx1, axis=-1), final_finished_scores_BxM,
       final_alive_scores_BxM)
-  return final_seq_BxMxT, final_scores_BxM
+  return final_seq_BxMxT, final_scores_BxM, {"beam_1logp": logpM1_BxTxV, "beam_2logp": logpM2_BxTxV,
+                                             "beam_3logp": logpM3_BxTxV}
 
 
 def _update_i(tensor_BxNxT, updates_BxN, i):
@@ -224,3 +232,36 @@ def _gather_nested(nested_BxMxU, indices_BxN):
     return tensor_BxNxU
 
   return tf.nest.map_structure(_gather_beam, nested_BxMxU)
+
+
+def _inplace_update_i(tensor_BxL, updates_B, i):
+  """Inplace update a tensor. B: batch_size, L: tensor length.
+  Copied from pegasus.decoding.py"""
+  batch_size = tensor_BxL.shape[0]
+  indices_Bx2 = tf.stack([
+      tf.range(batch_size, dtype=tf.int64),
+      tf.fill([batch_size], tf.cast(i, tf.int64))
+  ],
+                         axis=-1)
+  return tf.tensor_scatter_nd_update(tensor_BxL, indices_Bx2, updates_B)
+
+
+def _separate(logp_BxMxV, logpMi_BxTxV, M, i):
+    if M == 2:
+        logpM1_BxV = logp_BxMxV[0, 0]
+        logpM2_BxV = logp_BxMxV[0, 1]
+        logpM1_BxTxV = _inplace_update_i(logpMi_BxTxV[0], tf.expand_dims(logpM1_BxV, 0), i)
+        logpM2_BxTxV = _inplace_update_i(logpMi_BxTxV[1], tf.expand_dims(logpM2_BxV, 0), i)
+
+        return logpM1_BxTxV, logpM2_BxTxV, None
+
+    elif M == 3:
+        logpM1_BxV = logp_BxMxV[0, 0]
+        logpM2_BxV = logp_BxMxV[0, 1]
+        logpM3_BxV = logp_BxMxV[0, 2]
+
+        logpM1_BxTxV = _inplace_update_i(logpMi_BxTxV[0], tf.expand_dims(logpM1_BxV, 0), i)
+        logpM2_BxTxV = _inplace_update_i(logpMi_BxTxV[1], tf.expand_dims(logpM2_BxV, 0), i)
+        logpM3_BxTxV = _inplace_update_i(logpMi_BxTxV[2], tf.expand_dims(logpM3_BxV, 0), i)
+
+        return logpM1_BxTxV, logpM2_BxTxV, logpM3_BxTxV

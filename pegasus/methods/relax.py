@@ -35,7 +35,7 @@ def create_variables(z, logp, batch_index, sequence_index, clipped_logit_probs):
 def create_variables_from_samples(sample_z, sample_b, batch_index, sequence_index):
     """
     Create the variables for RELAX control variate
-    :param sample_z: [B,T,V] tensor containing sampled processed logits created by stacking logits during
+    :param sample_z: [B,T,V] tensor containing sampled processed logp created by stacking logp during
                     decoding loop of sampling process
     :param sample_b: the [B,T] tensor containing the H(z) indices (Gumbel-Max)
     :param batch_index: [B,T] tensor of the batch size repeated for seq len

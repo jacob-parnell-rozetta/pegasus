@@ -104,7 +104,8 @@ def left2right_decode(symbols_to_logits_fn,
                       temperature=0.0,
                       top_k=0,
                       top_p=0.0,
-                      eos_id=EOS_ID):
+                      eos_id=EOS_ID,
+                      sampling=False):
   """left to right decode.
 
   Notations:
@@ -128,6 +129,7 @@ def left2right_decode(symbols_to_logits_fn,
       (consider all symbols).
     top_p: Nucleus sampling probability.
     eos_id: end of token id, default to 1.
+    sampling: for sampling during training, default to False for predictions
 
   Returns:
     decodes: Tensor[batch, decode_len]
@@ -142,12 +144,15 @@ def left2right_decode(symbols_to_logits_fn,
     def decode_loop(i, decodes_BxT, cache_BxU_dict, logp_BxT, logp_BxTxV):
       logits_BxV = symbols_to_logits_fn(decodes_BxT, cache_BxU_dict, i)
       logits_BxV = process_logits(logits_BxV, top_k, top_p, temperature)
-      logp_BxV = tf.log(tf.clip_by_value(tf.math.softmax(logits_BxV, axis=1), 1e-8, 1.0))  # to log_p
       decodes_BxT = inplace_update_i(decodes_BxT, tf.argmax(logits_BxV, -1), i)  # ids of argmax(logits)
-      # add this -> [B,T] of logp values
-      logp_BxT = inplace_update_i(logp_BxT, tf.broadcast_to(tf.reduce_max(logp_BxV), [1, ]), i)
-      # add this to return [B,T,V] logp tensor -> used as the z for RELAX
-      logp_BxTxV = inplace_update_i(logp_BxTxV, logp_BxT, i)  # to get a BxTxV tensor of decoding loop
+      if sampling:
+        logp_BxV = tf.log(tf.clip_by_value(tf.math.softmax(logits_BxV, axis=1), 1e-8, 1.0))  # to log_p
+        # add this -> [B,T] of logp values
+        logp_BxT = inplace_update_i(logp_BxT, tf.broadcast_to(tf.reduce_max(logp_BxV), [1, ]), i)
+        # add this to return [B,T,V] logp tensor -> used as the z for RELAX
+        logp_BxTxV = inplace_update_i(logp_BxTxV, logp_BxT, i)  # to get a BxTxV tensor of decoding loop
+      else:
+          logp_BxT, logp_BxTxV = None, None
       return i + 1, decodes_BxT, cache_BxU_dict, logp_BxT, logp_BxTxV
 
     def loop_cond(i, decodes_BxT, unused_cache_BxU_dict, unused_logp_BxT, unused_logp_BxTxV):
@@ -156,17 +161,15 @@ def left2right_decode(symbols_to_logits_fn,
                             tf.logical_not(tf.reduce_all(finished_B)))
 
     init_dec_BxT = tf.zeros([batch_size, max_decode_len], dtype=dtype)
-    init_logp_BxT = tf.zeros([batch_size, max_decode_len], dtype=tf.float32)  # add as placeholder for vars
+    # add these init variables to append logp values where value is max, and the entire logp tensor stacked
+    init_logp_BxT = tf.zeros([batch_size, max_decode_len], dtype=tf.float32)
     init_logp_BxTxV = tf.zeros([batch_size, max_decode_len, vocab_size], dtype=tf.float32)
     _, decodes, _, logp_BxT, logp_BxTxV = tf.while_loop(
         loop_cond, decode_loop,
         [tf.constant(0, dtype=dtype), init_dec_BxT, context_BxU_dict, init_logp_BxT, init_logp_BxTxV])
 
-    # if log_BxTxV is not of max seq len, need to pad - add zeros
-    # if len(logp_BxTxV) != max_decode_len:
-    #     for i in range(max_decode_len - len(logp_BxTxV)):
-    #         logp_BxTxV.append(tf.zeros([batch_size, vocab_size], dtype=tf.float32))
-    return decodes, logp_BxT, logp_BxTxV
+    # return IDs and logp where max is, and dict containing whole logp tensor for [B,T,V]
+    return decodes, logp_BxT, {"beam1_logp": logp_BxTxV}
 
   else:
 
@@ -177,7 +180,7 @@ def left2right_decode(symbols_to_logits_fn,
 
     length_norm_fn = beam_search.length_normalization(beam_start, beam_alpha,
                                                       beam_min, beam_max, -1e3)
-    beams, scores = beam_search.beam_search(
+    beams, scores, beamlogp_dict = beam_search.beam_search(
         symbols_to_logits_fn_with_sampling,
         tf.zeros([batch_size, max_decode_len], dtype=tf.int32),
         context_BxU_dict, vocab_size, beam_size, length_norm_fn, eos_id)
@@ -187,6 +190,6 @@ def left2right_decode(symbols_to_logits_fn,
     for i in range(beam_size):
         beam_dict[i] = tf.cast(beams[:, i, :], dtype)
 
-    return beam_dict, scores, None
+    return beam_dict, scores, beamlogp_dict
     # always returns the first beam
     # return tf.cast(beams[:, 0, :], dtype)

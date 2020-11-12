@@ -56,14 +56,13 @@ def beam_sampling(model_params, features, max_seq_len, beam_params):
     :param beam_params: parameters for sampling method, beam size should be no bigger than 3 (memory)
     :return: IDs returned by beam search, and the respective sum(logp) score for that sequence, soon: logp_BxMxTxV
     """
-    # TODO: need to implement returning logits in the decoding.py/beam_search.py file. Currently only returns a
-    #  sentence score for the sampled sequence
     # SAMPLE TOKENS USING BEAM SEARCH
-    preds_dict, preds_scores, _ = model_params.model().predict(features, max_seq_len,
-                                                               beam_size=beam_params["_beam"],
-                                                               top_k=beam_params["top_k"],
-                                                               top_p=beam_params["top_p"],
-                                                               temperature=beam_params["temperature"])
+    preds_dict, preds_scores, beam_logp_dict = model_params.model().predict(features, max_seq_len,
+                                                                            beam_size=beam_params["_beam"],
+                                                                            top_k=beam_params["top_k"],
+                                                                            top_p=beam_params["top_p"],
+                                                                            temperature=beam_params["temperature"],
+                                                                            sampling=True)
     preds = preds_dict["outputs"][0]  # gets the IDs
     preds_score = preds_scores[:, 0]  # sentence score (sum of log_prob) for first
     preds2, preds_score2, preds3, preds_score3 = None, None, None, None
@@ -75,7 +74,9 @@ def beam_sampling(model_params, features, max_seq_len, beam_params):
         preds3 = preds_dict["outputs"][2]  # gets the IDs of third best
         preds_score3 = preds_scores[:, 2]  # sentence score (sum of log_prob) for third
 
-    return preds, preds_score, preds2, preds_score2, preds3, preds_score3
+    return {"ids1": preds, "sent_score1": preds_score,
+            "ids2": preds2, "sent_score2": preds_score2,
+            "ids3": preds3, "sent_score3": preds_score3}, beam_logp_dict
 
 
 def non_beam_sampling(model_params, features, max_seq_len, beam_params, sentence_score=False):
@@ -95,11 +96,12 @@ def non_beam_sampling(model_params, features, max_seq_len, beam_params, sentence
                                                                                 beam_size=1,
                                                                                 top_k=beam_params["top_k"],
                                                                                 top_p=beam_params["top_p"],
-                                                                                temperature=beam_params["temperature"])
+                                                                                temperature=beam_params["temperature"],
+                                                                                sampling=True)
     preds = preds_dict["outputs"][0]  # gets the IDs
 
     if sentence_score:
         score = tf.exp((1 / max_seq_len) * tf.reduce_sum(preds_logp_BxT))  # sentence score 0-1
     else:
         score = None
-    return preds, preds_logp_BxT, score, preds_logp_BxTxV
+    return {"ids": preds, "logp_BxT": preds_logp_BxT, "sent_score": score, "logp_BxTxV": preds_logp_BxTxV}
