@@ -187,7 +187,7 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       ##### BEAM SEARCH #############################################################################################
       # greedy_beam_params = {"_beam": 2, "top_k": 0, "top_p": 0.0, "temperature": 0.0}
       # random_beam_params = {"_beam": 2, "top_k": 0, "top_p": 0.0, "temperature": 1.0}
-      # topk_beam_params = {"_beam": 2, "top_k": 10000, "top_p": 0.0, "temperature": 1.0}
+      # topk_beam_params = {"_beam": 3, "top_k": 10000, "top_p": 0.0, "temperature": 1.0}
       # topp_beam_params = {"_beam": 2, "top_k": 0, "top_p": 0.9, "temperature": 1.0}
 
       # PREDS: IDs, SCORE: scalar sentence score returned as sum of logp from beam search
@@ -209,13 +209,13 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       #                                                 random_dict["ids"], batch_index, sequence_index)
       # FROM BEAM SEARCH SAMPLING
       # z_tilde, logp_b = create_variables_from_samples(random_logp_dict["beam_1logp"],
-      #                                                random_dict["ids1"], batch_index, sequence_index)
+      #                                                 random_dict["ids1"], batch_index, sequence_index)
 
       ##### TEXT AND ROUGE ##########################################################################################
       # target_text = rouge_decoding(outputs["targets"], model_params)  # TARGET SAMPLES
-      # argmax_pred_text = rouge_decoding(greedy_dict["ids"], model_params)  # ARGMAX SAMPLES
+      # argmax_pred_text = rouge_decoding(topk_dict["ids1"], model_params)  # ARGMAX SAMPLES
       # soft_pred_text = rouge_decoding(random_dict["ids1"], model_params)  # SOFTMAX SAMPLES
-      # additional_pred_text = rouge_decoding(topk_dict["ids"], model_params)  # ADDITIONAL SAMPLES
+      # additional_pred_text = rouge_decoding(topk_dict["ids3"], model_params)  # ADDITIONAL SAMPLES
 
       # CALCULATE ROUGE LOSS: ROUGE score -> ROUGE loss = -ROUGE score
       # NOTE: for ROUGE variant, change value (0: precision, 1: recall, 2: f1)
@@ -228,13 +228,13 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # ARGMAX -> logp(argmax(y))
       # argmax_logp = iid_log_probs(argmax_logp_index, batch_index, sequence_index, logp)
       # SOFTMAX -> logp(sample_y)
-      # softmax_logp = iid_log_probs(sample_y, batch_index, sequence_index, logp)
+      # softmax_logp = iid_log_probs(soft_logp_index, batch_index, sequence_index, logp)
       # ADDITIONAL
       # additional_logp = iid_log_probs(topk_indices_2, batch_index, sequence_index, logp)
 
       # CHANGE BELOW IF USING DECODER SAMPLED TOKENS/SCORES
       # weight the logp by ROUGE score (neg ROUGE_loss), sum values
-      # reinforce_loss = tf.reduce_sum(tf.multiply(rouge_loss_soft, random_dict["logp1"]))
+      # reinforce_loss = tf.reduce_sum(tf.multiply(rouge_loss_soft, random_dict["logp_BxT"]))
 
       ##### REINFORCE w/ BASELINE ###################################################################################
       # Socher (2017)
@@ -253,7 +253,7 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
 
       ##### EXPECTED RISK MINIMISATION ##############################################################################
       # L_risk = risk_loss(max_seq_len, rouge_losses=[rouge_loss_argmax, rouge_loss_soft, rouge_loss_extra],
-      #                    logits=[argmax_logp, softmax_logp, additional_logp], n=3)
+      #                    logps=[topk_dict["logp1"], topk_dict["logp2"], topk_dict["logp3"]], n=3)
 
       ##### MIXED LOSS ##############################################################################################
       # combined_loss = tf.math.add(tf.multiply(tf.constant(0.3, dtype=tf.float32), XENT_loss),
@@ -264,6 +264,8 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # combined_loss = tf.cond(constraint > 0.8, lambda: hard_reinforce_loss, lambda: XENT_loss)
 
       ##### RELAX CONTROL VARIATE ###################################################################################
+      # z = random_dict["logp_BxTxV"]["beam1_logp"]
+      # z = random_logp_dict["beam_1logp"]
       # z_target, zt_target = create_cv_target(outputs, batch_index, sequence_index, z, z_tilde)
 
       ##### RELAX LOSS ##############################################################################################
@@ -285,7 +287,8 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # d_c_z_tilde_d_theta = tf.gradients(c_z_tilde, theta)[0]
       # d_c_z_d_theta = tf.gradients(c_z, theta)[0]
 
-      # TODO: c_z_tilde must be scalar to calculate this, otherwise size error is an issue
+      # TODO: fix grad calc error when running beam sampling
+      #  returns None for manual/auto calc when using beam, hence relax cannot be computed
       # relax = tf.reduce_sum(f_y - c_z_tilde)*d_logp_d_theta - d_c_z_tilde_d_theta + d_c_z_d_theta
       # relax = tf.gradients(L_relax, theta)[0]  # will this work?
 
@@ -294,7 +297,6 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # train_op = optimizer.apply_gradients(list_of_gradient_variable_pairs, global_step=global_step)
 
       # Variance reduction objective
-      # relax_grads = [i[0] for i in list_of_gradient_variable_pairs]  # TODO: extraction does not work
       # variance_loss = tf.reduce_mean(tf.square(relax), name="variance_loss")
 
       # initialise adafactor again for variance optimiser

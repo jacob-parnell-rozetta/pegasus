@@ -68,7 +68,7 @@ def beam_sampling(model_params, features, max_seq_len, batch_index, sequence_ind
     preds = preds_dict["outputs"][0]  # gets the IDs
     preds_score = preds_scores[:, 0]  # sentence score (sum of log_prob) for first
     logp1_BxTxV = beam_logp_dict["beam_1logp"]  # [B,T,V] tensor we need to index with IDs
-    index_tensor1 = tf.stack([batch_index, sequence_index, logp1_BxTxV], axis=1)
+    index_tensor1 = tf.stack([batch_index, sequence_index, tf.reshape(preds, [max_seq_len])], axis=1)
     logp1_BxT = tf.gather_nd(logp1_BxTxV, index_tensor1)  # extract logps at ids
 
     preds2, preds_score2, preds3, preds_score3 = None, None, None, None
@@ -78,7 +78,7 @@ def beam_sampling(model_params, features, max_seq_len, batch_index, sequence_ind
         preds2 = preds_dict["outputs"][1]  # gets the IDs of second best
         preds_score2 = preds_scores[:, 1]  # sentence score (sum of log_prob) for second
         logp2_BxTxV = beam_logp_dict["beam_2logp"]  # [B,T,V] tensor we need to index with IDs
-        index_tensor2 = tf.stack([batch_index, sequence_index, logp2_BxTxV], axis=1)
+        index_tensor2 = tf.stack([batch_index, sequence_index, tf.reshape(preds2, [max_seq_len])], axis=1)
 
         logp2_BxT = tf.gather_nd(logp2_BxTxV, index_tensor2)  # extract logps at ids
         logp3_BxT = None
@@ -90,10 +90,10 @@ def beam_sampling(model_params, features, max_seq_len, batch_index, sequence_ind
         preds_score3 = preds_scores[:, 2]  # sentence score (sum of log_prob) for third
 
         logp2_BxTxV = beam_logp_dict["beam_2logp"]  # [B,T,V] tensor we need to index with IDs
-        index_tensor2 = tf.stack([batch_index, sequence_index, logp2_BxTxV], axis=1)
+        index_tensor2 = tf.stack([batch_index, sequence_index, tf.reshape(preds2, [max_seq_len])], axis=1)
         logp2_BxT = tf.gather_nd(logp2_BxTxV, index_tensor2)  # extract logps at ids
         logp3_BxTxV = beam_logp_dict["beam_3logp"]  # [B,T,V] tensor we need to index with IDs
-        index_tensor3 = tf.stack([batch_index, sequence_index, logp3_BxTxV], axis=1)
+        index_tensor3 = tf.stack([batch_index, sequence_index, tf.reshape(preds3, [max_seq_len])], axis=1)
         logp3_BxT = tf.gather_nd(logp3_BxTxV, index_tensor3)  # extract logps at ids
 
     return {"ids1": preds, "sent_score1": preds_score, "logp1": logp1_BxT,
