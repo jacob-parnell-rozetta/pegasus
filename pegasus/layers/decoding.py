@@ -146,6 +146,7 @@ def left2right_decode(symbols_to_logits_fn,
       logits_BxV = process_logits(logits_BxV, top_k, top_p, temperature)
       decodes_BxT = inplace_update_i(decodes_BxT, tf.argmax(logits_BxV, -1), i)  # ids of argmax(logits)
       if sampling:
+        decodes_BxT = tf.stop_gradient(decodes_BxT)  # remove from graph as it is not cont
         logp_BxV = tf.log(tf.clip_by_value(tf.math.softmax(logits_BxV, axis=1), 1e-8, 1.0))  # to log_p
         # add this -> [B,T] of logp values
         logp_BxT = inplace_update_i(logp_BxT, tf.broadcast_to(tf.reduce_max(logp_BxV), [1, ]), i)
