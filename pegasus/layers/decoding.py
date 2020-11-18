@@ -151,8 +151,6 @@ def left2right_decode(symbols_to_logits_fn,
         logp_BxT = inplace_update_i(logp_BxT, tf.broadcast_to(tf.reduce_max(logp_BxV), [1, ]), i)  # logp sequence
         logp_BxTxV = inplace_update_i(logp_BxTxV, logp_BxV, i)  # logp sequence x vocab
         logits_BxTxV = inplace_update_i(logits_BxTxV, logits_BxV, i)  # logits sequence x vocab
-      else:
-          logp_BxT, logp_BxTxV, logits_BxTxV = None, None, None
 
       return i + 1, decodes_BxT, cache_BxU_dict, logp_BxT, logp_BxTxV, logits_BxTxV
 
@@ -178,23 +176,15 @@ def left2right_decode(symbols_to_logits_fn,
 
   else:
 
-    def symbols_to_logits_fn_with_sampling(decodes_BxT, states_BxU_dict, i):
-      logits_BxV = symbols_to_logits_fn(decodes_BxT, states_BxU_dict, i)
-      logits_BxV = process_logits(logits_BxV, top_k, top_p, temperature)
-      return logits_BxV, states_BxU_dict
+      def symbols_to_logits_fn_with_sampling(decodes_BxT, states_BxU_dict, i):
+          logits_BxV = symbols_to_logits_fn(decodes_BxT, states_BxU_dict, i)
+          logits_BxV = process_logits(logits_BxV, top_k, top_p, temperature)
+          return logits_BxV, states_BxU_dict
 
-    length_norm_fn = beam_search.length_normalization(beam_start, beam_alpha,
-                                                      beam_min, beam_max, -1e3)
-    beams, scores, beam_dict = beam_search.beam_search(
-        symbols_to_logits_fn_with_sampling,
-        tf.zeros([batch_size, max_decode_len], dtype=tf.int32),
-        context_BxU_dict, vocab_size, beam_size, length_norm_fn, eos_id, sampling)
-
-    # add this to return all beams, not just first
-    beam_dict = {}
-    for i in range(beam_size):
-        beam_dict[i] = tf.cast(beams[:, i, :], dtype)
-
-    return beam_dict, scores, beam_dict
-    # always returns the first beam
-    # return tf.cast(beams[:, 0, :], dtype)
+      length_norm_fn = beam_search.length_normalization(beam_start, beam_alpha,
+                                                        beam_min, beam_max, -1e3)
+      beams, _ = beam_search.beam_search(
+          symbols_to_logits_fn_with_sampling,
+          tf.zeros([batch_size, max_decode_len], dtype=tf.int32),
+          context_BxU_dict, vocab_size, beam_size, length_norm_fn, eos_id)
+      return tf.cast(beams[:, 0, :], dtype)

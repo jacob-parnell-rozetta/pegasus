@@ -13,17 +13,14 @@
 # limitations under the License.
 
 """Beam search.
-
 This beam search implementation is designed for TPU usage only and prefers
 flexibility over efficiency. Transformer attention caching is not enabled yet.
-
 Mostly follows implementation in T2T. Several difference to pure beamsearch:
 1. has finished and alive seqs, use 2 * beam_size to grow alive seqs,
    which makes beam_size=1 doesn't equal greedy.
 2. prefers finished seq over alive seqs.
 3. prefers lower indices when equal probability (though unlikely).
 4. with custom length normalization and constraint.
-
 Notations:
   B: batch_size, M: beam_size, T: max_decode_len, V: vocab_size, U: undefined
 """
@@ -35,13 +32,10 @@ import tensorflow as tf
 
 def length_normalization(start, alpha, min_len, max_len, out_of_range_penalty):
   r"""Create length normalization function.
-
   Combines length penalty from https://arxiv.org/abs/1609.08144,
   and length constraint from https://www.aclweb.org/anthology/W18-2706.pdf.
-
   scores = \sum_j log(P_j) / ((start + lengths)/(1 + start))**alpha
           + out_of_range_penalty * (length > max_len or length < min_len)
-
   Args:
     start: int, length normalization start offset.
     alpha: float, [0, 1.0],  length normalization power.
@@ -50,7 +44,6 @@ def length_normalization(start, alpha, min_len, max_len, out_of_range_penalty):
     out_of_range_penalty: float, penalty for lengths outside min len and max
       len. Use a negative number that penalize out of range decodes, does hard
       constraint if set to -inf.
-
   Returns:
     fn(log_probs_BxM, length)->scores_BxM: a function to normalize sum log
     probabilities of sequence with current decoding lengths.
@@ -77,10 +70,8 @@ def beam_search(symbols_to_logits_fn,
                 vocab_size,
                 beam_size,
                 length_norm_fn,
-                eos_id=1,
-                sampling=False):
+                eos_id=1):
   """Beam search.
-
   Args:
     symbols_to_logits_fn: fn(seq_BxT, cache_BxU, i) -> (logits_BxV, cache_BxU)
     init_seq_BxT: initial sequence ids.
@@ -89,8 +80,6 @@ def beam_search(symbols_to_logits_fn,
     beam_size: beam size.
     length_norm_fn: length normalization function.
     eos_id: end of sequence.
-    sampling: for training.
-
   Returns:
     Tuple of (beams_BxMxT, scores_BxM). Beam searched sequences and scores.
   """
@@ -100,10 +89,7 @@ def beam_search(symbols_to_logits_fn,
   int_dtype = init_seq_BxT.dtype
 
   def _loop_body(i, alive_seq_BxMxT, alive_log_probs_BxM, alive_cache_BxMxU,
-                 finished_seq_BxMxT, finished_scores_BxM,
-                 init_finished_logpM1_BxTxV, init_finished_logpM2_BxTxV, init_finished_logpM3_BxTxV,
-                 init_finished_logitsM1_BxTxV, init_finished_logitsM2_BxTxV, init_finished_logitsM3_BxTxV,
-                 init_finished_Hz_BxT):
+                 finished_seq_BxMxT, finished_scores_BxM):
     """Beam search loop body."""
     # Decode one step with beam
     logits_BMxV, cache_BMxU = symbols_to_logits_fn(
@@ -114,30 +100,8 @@ def beam_search(symbols_to_logits_fn,
                                             cache_BMxU)
 
     # select top 2 * beam_size and fill alive and finished.
-    # TODO: look into difference between this and the use of softmax for conversion to logp
     log_probs_BxMxV = logits_BxMxV - tf.reduce_logsumexp(
         logits_BxMxV, axis=2, keepdims=True)
-
-    if sampling:
-        # splits the stacked beam logits -> only use the first beam for H(z)
-        # TODO: Risk with RELAX will need one Hz per beam
-        logitsM1_BxV = tf.reshape(logits_BxMxV[0, 0], (B, V))
-        # add argmax to output -> sampled H(z), stop grad as not cont
-        Hz_BxT = tf.stop_gradient(_inplace_update_i(init_finished_Hz_BxT, tf.argmax(logitsM1_BxV, -1), i))
-
-        # convert logits for this loop into logp using original technique (consistency w/ other implementations)
-        logp_BxMxV = tf.log(tf.clip_by_value(tf.math.softmax(logits_BxMxV, axis=2), 1e-8, 1.0))
-        logpM1_BxTxV, logpM2_BxTxV, logpM3_BxTxV = _separate(logp_BxMxV,
-                                                             [init_finished_logpM1_BxTxV, init_finished_logpM2_BxTxV,
-                                                              init_finished_logpM3_BxTxV], B, T, V, M, i)
-        logitsM1_BxTxV, logitsM2_BxTxV, logitsM3_BxTxV = _separate(logits_BxMxV,
-                                                                   [init_finished_logitsM1_BxTxV,
-                                                                    init_finished_logitsM2_BxTxV,
-                                                                    init_finished_logitsM3_BxTxV], B, T, V, M, i)
-    else:  # during prediction
-        Hz_BxT, logpM1_BxTxV, logpM2_BxTxV, logpM3_BxTxV, logitsM1_BxTxV, logitsM2_BxTxV, logitsM3_BxTxV = \
-            None, None, None, None, None, None, None
-
     log_probs_BxMxV += tf.expand_dims(alive_log_probs_BxM, axis=2)
     log_probs_BxMV = tf.reshape(log_probs_BxMxV, [B, -1])
     new_log_probs_Bx2M, topk_indices_Bx2M = tf.nn.top_k(log_probs_BxMV, k=2 * M)
@@ -169,10 +133,7 @@ def beam_search(symbols_to_logits_fn,
 
     return [
         i + 1, alive_seq_BxMxT, alive_log_probs_BxM, alive_cache_BxMxU,
-        finished_seq_BxMxT, finished_scores_BxM,
-        logpM1_BxTxV, logpM2_BxTxV, logpM3_BxTxV,
-        logitsM1_BxTxV, logitsM2_BxTxV, logitsM3_BxTxV,
-        Hz_BxT
+        finished_seq_BxMxT, finished_scores_BxM
     ]
 
   # initialize.
@@ -185,32 +146,15 @@ def beam_search(symbols_to_logits_fn,
   init_finished_seq_BxMxT = tf.zeros(tf.shape(init_alive_seq_BxMxT), int_dtype)
   init_finished_scores_BxM = tf.zeros([B, M], dtype=dtype) + dtype.min
 
-  # add these for extracting
-  init_finished_logpM1_BxTxV = tf.zeros([B, T, V], dtype=dtype)
-  init_finished_logpM2_BxTxV = tf.zeros([B, T, V], dtype=dtype)
-  init_finished_logpM3_BxTxV = tf.zeros([B, T, V], dtype=dtype)
-
-  init_finished_logitsM1_BxTxV = tf.zeros([B, T, V], dtype=dtype)
-  init_finished_logitsM2_BxTxV = tf.zeros([B, T, V], dtype=dtype)
-  init_finished_logitsM3_BxTxV = tf.zeros([B, T, V], dtype=dtype)
-
-  init_finished_Hz_BxT = tf.zeros([B, T], dtype=tf.int64)  # will serve as argmax of logits H(z)
-
   # run loop.
   (_, final_alive_seq_BxMxT, final_alive_scores_BxM, _,
-   final_finished_seq_BxMxT, final_finished_scores_BxM,
-   logpM1_BxTxV, logpM2_BxTxV, logpM3_BxTxV,
-   logitsM1_BxTxV, logitsM2_BxTxV, logitsM3_BxTxV,
-   Hz_BxT) = tf.while_loop(
+   final_finished_seq_BxMxT, final_finished_scores_BxM) = tf.while_loop(
        lambda *args: True,  # Always do T iterations
        _loop_body,
        loop_vars=[
            init_i, init_alive_seq_BxMxT, init_alive_log_probs_BxM,
            init_alive_cache_BxMxU, init_finished_seq_BxMxT,
-           init_finished_scores_BxM,
-           init_finished_logpM1_BxTxV, init_finished_logpM2_BxTxV, init_finished_logpM3_BxTxV,
-           init_finished_logitsM1_BxTxV, init_finished_logitsM2_BxTxV, init_finished_logitsM3_BxTxV,
-           init_finished_Hz_BxT
+           init_finished_scores_BxM
        ],
        parallel_iterations=1,
        back_prop=False,
@@ -226,10 +170,7 @@ def beam_search(symbols_to_logits_fn,
   final_scores_BxM = tf.where(
       tf.squeeze(final_finished_flag_BxMx1, axis=-1), final_finished_scores_BxM,
       final_alive_scores_BxM)
-  return final_seq_BxMxT, final_scores_BxM, {"beam_1logp": logpM1_BxTxV, "beam_2logp": logpM2_BxTxV,
-                                             "beam_3logp": logpM3_BxTxV, "beam_1logits": logitsM1_BxTxV,
-                                             "beam_2logits": logitsM2_BxTxV, "beam_3logits": logitsM3_BxTxV,
-                                             "Hz": Hz_BxT}
+  return final_seq_BxMxT, final_scores_BxM
 
 
 def _update_i(tensor_BxNxT, updates_BxN, i):
@@ -270,38 +211,3 @@ def _gather_nested(nested_BxMxU, indices_BxN):
     return tensor_BxNxU
 
   return tf.nest.map_structure(_gather_beam, nested_BxMxU)
-
-
-def _inplace_update_i(tensor_BxL, updates_B, i):
-  """Inplace update a tensor. B: batch_size, L: tensor length.
-  Copied from pegasus.decoding.py"""
-  batch_size = tensor_BxL.shape[0]
-  indices_Bx2 = tf.stack([
-      tf.range(batch_size, dtype=tf.int64),
-      tf.fill([batch_size], tf.cast(i, tf.int64))
-  ],
-                         axis=-1)
-  return tf.tensor_scatter_nd_update(tensor_BxL, indices_Bx2, updates_B)
-
-
-def _separate(logp_BxMxV, logpMi_BxTxV, B, T, V, M, i):
-    if M == 2:
-        logpM1_BxV = tf.reshape(logp_BxMxV[0, 0], (B, V))
-        logpM2_BxV = tf.reshape(logp_BxMxV[0, 1], (B, V))
-
-        logpM1_BxTxV = _inplace_update_i(logpMi_BxTxV[0], logpM1_BxV, i)
-        logpM2_BxTxV = _inplace_update_i(logpMi_BxTxV[1], logpM2_BxV, i)
-
-        # return empty tensor for 3rd beam
-        return logpM1_BxTxV, logpM2_BxTxV, tf.zeros([B, T, V])
-
-    elif M == 3:
-        logpM1_BxV = tf.reshape(logp_BxMxV[0, 0], (B, V))
-        logpM2_BxV = tf.reshape(logp_BxMxV[0, 1], (B, V))
-        logpM3_BxV = tf.reshape(logp_BxMxV[0, 2], (B, V))
-
-        logpM1_BxTxV = _inplace_update_i(logpMi_BxTxV[0], logpM1_BxV, i)
-        logpM2_BxTxV = _inplace_update_i(logpMi_BxTxV[1], logpM2_BxV, i)
-        logpM3_BxTxV = _inplace_update_i(logpMi_BxTxV[2], logpM3_BxV, i)
-
-        return logpM1_BxTxV, logpM2_BxTxV, logpM3_BxTxV
