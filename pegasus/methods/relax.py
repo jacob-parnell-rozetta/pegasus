@@ -86,4 +86,4 @@ def create_cv_target(outputs, batch_index, sequence_index, z, z_tilde):
     z_target = tf.broadcast_to(tgt_probs_cv_z, z.get_shape().as_list())
     zt_target = tf.broadcast_to(tgt_probs_cv_ztilde, z_tilde.get_shape().as_list())
 
-    return z_target, zt_target
+    return z_target, zt_target  # assumes shapes: [BxTxV], [BxTxV]
