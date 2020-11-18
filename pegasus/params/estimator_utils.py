@@ -155,26 +155,33 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       batch_index = tf.constant(np.zeros(sequence_index.get_shape().as_list()[0]), dtype=tf.int64)
 
       ##### I.I.D SAMPLING ##########################################################################################
+      """ Here we sample the tokens that are produced by teacher forcing. """
       # Normalise logits to log-prob, and compute Gumbel samples with location
-      # logit_probs = tf.math.softmax(outputs["logits"])  # should not be x <= 0
+      # logit_probs = tf.math.softmax(outputs["logits"], axis=2)  # should not be x <= 0
       # clipped_logit_probs = tf.clip_by_value(logit_probs, 1e-8, 1.0)
       # logp = tf.log(clipped_logit_probs)
 
-      # TO RETURN MORE THAN ONE DECODER SAMPLE
+      # RETURNS TEACHER FORCING SAMPLED TOKEN VARIATIONS
       # argmax_logp_index, soft_logp_index, topk_out, z = iid_sampling(logp, max_seq_len, greedy=True, soft=True,
       #                                                                topk=True, k=2)
       # topk_probs, topk_indices = topk_out
 
       ##### DECODER SAMPLING ########################################################################################
+      """ Here we sample the tokens using the decoder. Beam size == 1. 
+            PREDS: IDs
+            LOGP: transformed logits
+            SCORE: scalar score using RISK trick
+            LOGP: [BxTxV] beam logp
+            LOGITS: [BxTxV] beam logits
+            the dictionary contains the following keys: {ids, logp_BxT, sent_score, logp_BxTxV}
+      # Note: the logp_BxTxV are analogous to z -> should be used for RELAX, preds are the BxT of these -> b=H(z), and
+      # logp are the corresponding values (score is normalised to sentence score).
+      """
       # greedy_beam_params = {"top_k": 0, "top_p": 0.0, "temperature": 0.0}
       # random_beam_params = {"top_k": 0, "top_p": 0.0, "temperature": 1.0}
-      # topk_beam_params = {"top_k": 10000, "top_p": 0.0, "temperature": 0.0}
-      # topp_beam_params = {"top_k": 0, "top_p": 0.9, "temperature": 0.0}
+      # topk_beam_params = {"top_k": 10000, "top_p": 0.0, "temperature": 1.0}
+      # topp_beam_params = {"top_k": 0, "top_p": 0.9, "temperature": 1.0}
 
-      # PREDS: IDs, LOGP: transformed logits, SCORE: scalar score using RISK trick, LOGP: [BxTxV] beam logp
-      # {ids, logp_BxT, sent_score, logp_BxTxV}
-      # Note: the logp_BxTxV are analogous to z -> should be used for RELAX, preds are the BxT of these -> b=H(z), and
-      # logp are the corresponding values (score is normalised to sentence score)
       # greedy_dict = non_beam_sampling(model_params, features, max_seq_len,
       #                                 beam_params=greedy_beam_params, sentence_score=False)
       # random_dict = non_beam_sampling(model_params, features, max_seq_len,
@@ -184,32 +191,13 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # topp_dict = non_beam_sampling(model_params, features, max_seq_len,
       #                               beam_params=topp_beam_params, sentence_score=False)
 
-      ##### BEAM SEARCH #############################################################################################
-      # greedy_beam_params = {"_beam": 2, "top_k": 0, "top_p": 0.0, "temperature": 0.0}
-      # random_beam_params = {"_beam": 2, "top_k": 0, "top_p": 0.0, "temperature": 1.0}
-      # topk_beam_params = {"_beam": 3, "top_k": 10000, "top_p": 0.0, "temperature": 1.0}
-      # topp_beam_params = {"_beam": 2, "top_k": 0, "top_p": 0.9, "temperature": 1.0}
-
-      # PREDS: IDs, SCORE: scalar sentence score returned as sum of logp from beam search
-      # {ids1, sent_score1, ...} and {beam_1logp, beam_2logp, beam_1logp}
-      # greedy_dict, greedy_logp_dict = beam_sampling(model_params, features, max_seq_len, batch_index, sequence_index,
-      #                                               beam_params=greedy_beam_params)
-      # random_dict, random_logp_dict = beam_sampling(model_params, features, max_seq_len, batch_index, sequence_index,
-      #                                               beam_params=random_beam_params)
-      # topk_dict, topk_logp_dict = beam_sampling(model_params, features, max_seq_len, batch_index, sequence_index,
-      #                                           beam_params=topk_beam_params)
-      # topp_dict, topp_logp_dict = beam_sampling(model_params, features, max_seq_len, batch_index, sequence_index,
-      #                                           beam_params=topp_beam_params)
-
       ##### RELAX VARIABLES #########################################################################################
-      # FROM TRADITIONAL DECODER
+      # TEACHER FORCING SAMPLING
       # z_tilde, logp_b = create_variables(z, logp, batch_index, sequence_index, clipped_logit_probs)
-      # FROM DECODER SAMPLING PROCESS
-      # z_tilde, logp_b = create_variables_from_samples(random_dict["logp_BxTxV"]["beam1_logp"],
+
+      # DECODER SAMPLING -> sample_b is already argmaxed in decode loop
+      # z_tilde, logp_b = create_variables_from_samples(random_dict["logits_BxTxV"], random_dict["logp_BxTxV"],
       #                                                 random_dict["ids"], batch_index, sequence_index)
-      # FROM BEAM SEARCH SAMPLING
-      # z_tilde, logp_b = create_variables_from_samples(random_logp_dict["beam_1logp"],
-      #                                                 random_dict["ids1"], batch_index, sequence_index)
 
       ##### TEXT AND ROUGE ##########################################################################################
       # target_text = rouge_decoding(outputs["targets"], model_params)  # TARGET SAMPLES
@@ -264,8 +252,7 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # combined_loss = tf.cond(constraint > 0.8, lambda: hard_reinforce_loss, lambda: XENT_loss)
 
       ##### RELAX CONTROL VARIATE ###################################################################################
-      # z = random_dict["logp_BxTxV"]["beam1_logp"]
-      # z = random_logp_dict["beam_1logp"]
+      # z = random_dict["logp_BxTxV"]
       # z_target, zt_target = create_cv_target(outputs, batch_index, sequence_index, z, z_tilde)
 
       ##### RELAX LOSS ##############################################################################################
@@ -286,11 +273,9 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # d_logp_d_theta = tf.gradients(logp_b, theta)[0]  # logp
       # d_c_z_tilde_d_theta = tf.gradients(c_z_tilde, theta)[0]
       # d_c_z_d_theta = tf.gradients(c_z, theta)[0]
-
-      # TODO: fix grad calc error when running beam sampling
-      #  returns None for manual/auto calc when using beam, hence relax cannot be computed
       # relax = tf.reduce_sum(f_y - c_z_tilde)*d_logp_d_theta - d_c_z_tilde_d_theta + d_c_z_d_theta
-      # relax = tf.gradients(L_relax, theta)[0]  # will this work?
+
+      # relax = tf.gradients(L_relax, theta)[0]
 
       # Calculate the first optimization step with loss
       # list_of_gradient_variable_pairs = optimizer.compute_gradients(L_relax)

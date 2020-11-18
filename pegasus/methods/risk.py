@@ -14,8 +14,8 @@ def risk_loss(max_seq_len, rouge_losses=None, logps=None, n=2):
     """
     if n == 2:
         # Calculate f_u for as many sequences
-        f_u_1 = tf.exp((1.0 / max_seq_len) * tf.reduce_sum(logps[0]))
-        f_u_2 = tf.exp((1.0 / max_seq_len) * tf.reduce_sum(logps[1]))
+        f_u_1 = tf.exp(tf.reduce_mean(logps[0], axis=1))
+        f_u_2 = tf.exp(tf.reduce_mean(logps[1], axis=1))
 
         # Calculate p_u for as many sequences
         p_u_1 = f_u_1 / tf.reduce_sum([f_u_1, f_u_2])
@@ -31,9 +31,9 @@ def risk_loss(max_seq_len, rouge_losses=None, logps=None, n=2):
 
     elif n == 3:
         # Calculate f_u for as many sequences
-        f_u_1 = tf.exp((1.0 / max_seq_len) * tf.reduce_sum(logps[0]))
-        f_u_2 = tf.exp((1.0 / max_seq_len) * tf.reduce_sum(logps[1]))
-        f_u_3 = tf.exp((1.0 / max_seq_len) * tf.reduce_sum(logps[2]))
+        f_u_1 = tf.exp(tf.reduce_mean(logps[0], axis=1))
+        f_u_2 = tf.exp(tf.reduce_mean(logps[1], axis=1))
+        f_u_3 = tf.exp(tf.reduce_mean(logps[2], axis=1))
 
         # Calculate p_u for as many sequences
         p_u_1 = f_u_1 / tf.reduce_sum([f_u_1, f_u_2, f_u_3])

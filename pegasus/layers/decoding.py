@@ -141,36 +141,40 @@ def left2right_decode(symbols_to_logits_fn,
   # In this case, alpha value for length penalty will take effect.
   if beam_size == 1:
 
-    def decode_loop(i, decodes_BxT, cache_BxU_dict, logp_BxT, logp_BxTxV):
+    def decode_loop(i, decodes_BxT, cache_BxU_dict, logp_BxT, logp_BxTxV, logits_BxTxV):
       logits_BxV = symbols_to_logits_fn(decodes_BxT, cache_BxU_dict, i)
-      logits_BxV = process_logits(logits_BxV, top_k, top_p, temperature)
+      logits_BxV = process_logits(logits_BxV, top_k, top_p, temperature)  # returns z
       decodes_BxT = inplace_update_i(decodes_BxT, tf.argmax(logits_BxV, -1), i)  # ids of argmax(logits)
       if sampling:
-        decodes_BxT = tf.stop_gradient(decodes_BxT)  # remove from graph as it is not cont
-        logp_BxV = tf.log(tf.clip_by_value(tf.math.softmax(logits_BxV, axis=1), 1e-8, 1.0))  # to log_p
-        # add this -> [B,T] of logp values
-        logp_BxT = inplace_update_i(logp_BxT, tf.broadcast_to(tf.reduce_max(logp_BxV), [1, ]), i)
-        # add this to update [B,T,V] logp tensor with prob dist along V for that token -> used as the z for RELAX
-        logp_BxTxV = inplace_update_i(logp_BxTxV, logp_BxV, i)  # to get a BxTxV tensor of decoding loop
+        decodes_BxT = tf.stop_gradient(decodes_BxT)  # remove from graph
+        logp_BxV = tf.log(tf.clip_by_value(tf.math.softmax(logits_BxV, axis=1), 1e-8, 1.0))  # logits -> logp
+        logp_BxT = inplace_update_i(logp_BxT, tf.broadcast_to(tf.reduce_max(logp_BxV), [1, ]), i)  # logp sequence
+        logp_BxTxV = inplace_update_i(logp_BxTxV, logp_BxV, i)  # logp sequence x vocab
+        logits_BxTxV = inplace_update_i(logits_BxTxV, logits_BxV, i)  # logits sequence x vocab
       else:
-          logp_BxT, logp_BxTxV = None, None
-      return i + 1, decodes_BxT, cache_BxU_dict, logp_BxT, logp_BxTxV
+          logp_BxT, logp_BxTxV, logits_BxTxV = None, None, None
 
-    def loop_cond(i, decodes_BxT, unused_cache_BxU_dict, unused_logp_BxT, unused_logp_BxTxV):
+      return i + 1, decodes_BxT, cache_BxU_dict, logp_BxT, logp_BxTxV, logits_BxTxV
+
+    def loop_cond(i, decodes_BxT, unused_cache_BxU_dict, unused_logp_BxT, unused_logp_BxTxV, unused_logits_BxTxV):
       finished_B = tf.reduce_any(tf.equal(decodes_BxT, EOS_ID), axis=1)
       return tf.logical_and(i < max_decode_len,
                             tf.logical_not(tf.reduce_all(finished_B)))
 
     init_dec_BxT = tf.zeros([batch_size, max_decode_len], dtype=dtype)
-    # add these init variables to append logp values where value is max, and the entire logp tensor stacked
-    init_logp_BxT = tf.zeros([batch_size, max_decode_len], dtype=tf.float32)
-    init_logp_BxTxV = tf.zeros([batch_size, max_decode_len, vocab_size], dtype=tf.float32)
-    _, decodes, _, logp_BxT, logp_BxTxV = tf.while_loop(
-        loop_cond, decode_loop,
-        [tf.constant(0, dtype=dtype), init_dec_BxT, context_BxU_dict, init_logp_BxT, init_logp_BxTxV])
 
-    # return IDs and logp where max is, and dict containing whole logp tensor for [B,T,V]
-    return decodes, logp_BxT, {"beam1_logp": logp_BxTxV}
+    # added placeholder tensors to append values to
+    init_logp_BxT = tf.zeros([batch_size, max_decode_len], dtype=tf.float32)  # logp sequence
+    init_logp_BxTxV = tf.zeros([batch_size, max_decode_len, vocab_size], dtype=tf.float32)  # logp sequence x vocab
+    init_logits_BxTxV = tf.zeros([batch_size, max_decode_len, vocab_size], dtype=tf.float32)  # logits sequence x vocab
+
+    _, decodes, _, logp_BxT, logp_BxTxV, logits_BxTxV = tf.while_loop(
+        loop_cond, decode_loop,
+        [tf.constant(0, dtype=dtype), init_dec_BxT, context_BxU_dict,
+         init_logp_BxT, init_logp_BxTxV, init_logits_BxTxV])
+
+    # {ids of argmax(logits), logp of sequence where argmax, dict(entire logp of beam, entire logits of beam)}
+    return decodes, logp_BxT, {"beam1_logp": logp_BxTxV, "beam1_logits": logits_BxTxV}
 
   else:
 
@@ -181,16 +185,16 @@ def left2right_decode(symbols_to_logits_fn,
 
     length_norm_fn = beam_search.length_normalization(beam_start, beam_alpha,
                                                       beam_min, beam_max, -1e3)
-    beams, scores, beamlogp_dict = beam_search.beam_search(
+    beams, scores, beam_dict = beam_search.beam_search(
         symbols_to_logits_fn_with_sampling,
         tf.zeros([batch_size, max_decode_len], dtype=tf.int32),
-        context_BxU_dict, vocab_size, beam_size, length_norm_fn, eos_id)
+        context_BxU_dict, vocab_size, beam_size, length_norm_fn, eos_id, sampling)
 
     # add this to return all beams, not just first
     beam_dict = {}
     for i in range(beam_size):
         beam_dict[i] = tf.cast(beams[:, i, :], dtype)
 
-    return beam_dict, scores, beamlogp_dict
+    return beam_dict, scores, beam_dict
     # always returns the first beam
     # return tf.cast(beams[:, 0, :], dtype)
