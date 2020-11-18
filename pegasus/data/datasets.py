@@ -154,7 +154,7 @@ class TFDSDataset(BaseDataset):
         as_supervised=self.is_supervised,
         split=split,
         with_info=True,
-        shuffle_files=shuffle_files,  # False for 2xfine-tune
+        shuffle_files=False,  # shuffle_files,  # False for 2xfine-tune
         data_dir="/data/jsparnel/tensorflow_datasets/")
     num_examples = self.num_examples or info.splits[split].num_examples
     return dataset, num_examples

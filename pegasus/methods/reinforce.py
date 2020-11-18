@@ -1,0 +1,30 @@
+import tensorflow as tf
+from pegasus.ops import public_parsing_ops
+
+
+def rouge_decoding(ids, model_params):
+    """
+    To convert the IDs to text using the vocab and SP encoder.
+    :param ids: [B,T] tensor of ids in vocab
+    :param model_params: the defined model parameters
+    :return: decoded text removed from graph (stop grad)
+    """
+    decode_text_tensor = public_parsing_ops.decode(ids, model_params.vocab_filename, model_params.encoder_type)
+    decode_text = tf.stop_gradient(decode_text_tensor[0])
+    return decode_text
+
+
+def iid_log_probs(ids, batch_index, sequence_index, logp):
+    """
+    Stacks the ids into a matrix that allows you to extract the corresponding logp
+    from the iid samples from the decoder.
+    :param ids: [B,T] tensor of ids in vocab
+    :param batch_index: [B,T] tensor of the batch size repeated for seq len
+    :param sequence_index: [B,T] tensor of range(0, seq len)
+    :param logp: the [B,T,V] tensor of logp from the decoder (softmax of logits)
+    :return: the corresponding log probabilities for the sampled IDs
+    """
+    logp_new = tf.reshape(ids, [ids.get_shape().as_list()[1]])
+    index_tensor = tf.stack([batch_index, sequence_index, logp_new], axis=1)
+    logp_out = tf.gather_nd(logp, index_tensor)  # finds log probs using indexing
+    return logp_out

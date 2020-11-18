@@ -42,7 +42,7 @@ def get_input_fn(parser_fn,
     dataset = dataset.map(parser, num_parallel_calls=parallelism)
     dataset = dataset.unbatch()
     if training:
-      dataset = dataset.shuffle(10000)  # comment out for 2xfine-tune
+      # dataset = dataset.shuffle(10000)  # comment out for 2xfine-tune
       dataset = dataset.repeat()
     dataset = dataset.padded_batch(
         params["batch_size"],
