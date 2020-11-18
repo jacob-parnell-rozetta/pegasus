@@ -22,7 +22,7 @@ import numpy as np
 from pegasus.ops import public_parsing_ops
 from pegasus.eval.rouge_tensors import evaluate_r1, evaluate_r2, evaluate_rl
 from pegasus.models.control_variate import ffn_baseline, control_variate, Q_func
-from pegasus.methods.decoder_sampling import iid_sampling, beam_sampling, non_beam_sampling
+from pegasus.methods.decoder_sampling import iid_sampling, non_beam_sampling
 from pegasus.methods.reinforce import rouge_decoding, iid_log_probs
 from pegasus.methods.risk import risk_loss
 from pegasus.methods.relax import create_variables, create_cv_target, create_variables_from_samples
