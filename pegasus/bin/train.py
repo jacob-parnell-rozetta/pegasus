@@ -88,9 +88,10 @@ def main(_):
   logging.warning("Flag 2: Training the Estimator")
   # EVALUATION DURING TRAINING HOOK
   # TODO: read loss value output and stop training early
+  # is steps=100 run on entire validation set?
   input_fn = infeed.get_input_fn(params.parser, params.dev_pattern, tf.estimator.ModeKeys.EVAL)
   evaluator = tf.estimator.experimental.InMemoryEvaluatorHook(
-      estimator, input_fn, steps=None, hooks=None, name="evaluate-dev", every_n_iter=1000
+      estimator, input_fn, steps=100, hooks=None, name="evaluate-dev", every_n_iter=1000
   )
   # eval_metrics = model_params.estimator_eval_metrics_fn(features, outputs)
   for train_steps in train_steps_list:
