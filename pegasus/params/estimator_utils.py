@@ -36,40 +36,34 @@ from tensorflow.contrib.tpu.python.tpu import tpu_estimator
 from tensorflow.contrib.tpu.python.tpu import tpu_optimizer
 
 
-def create_estimator(master,  # local tensorflow server
-                     model_dir,  # directory pointing to model checkpoints (e.g.ckpt/pegasus_ckpt/cnn_dailymail)
-                     use_tpu,  # false by default
-                     iterations_per_loop,  # 1000 by default
-                     num_shards,  # 1 by default
-                     model_params,  # should be the name of the model we want (defined above - e.g. cnn_dailymail_transformer)
+def create_estimator(master,
+                     model_dir,
+                     use_tpu,
+                     iterations_per_loop,
+                     num_shards,
+                     model_params,
                      include_features_in_predictions=True,
                      decode_keys=(),
-                     train_init_checkpoint=None,   # the pre-trained model checkpoint (e.g. ckpt/pegasus_ckpt/model.ckpt-1500000)
-                     train_warmup_steps=10000,  # number of steps to warm up, 10000 by default
-                     save_checkpoints_steps=1000,  # number of steps to save ckpt, 1000 by default
-                     keep_checkpoint_max=5):  # number of recent ckpt to keep (older deleted), 5 by default
+                     train_init_checkpoint=None,
+                     train_warmup_steps=10000,
+                     save_checkpoints_steps=1000,
+                     keep_checkpoint_max=5):
   """Returns an tensorflow estimator."""
+  # Define GPU Config for session
+  config = tf.ConfigProto(allow_soft_placement=True, log_device_placement=False)
+  #                         gpu_options=tf.GPUOptions(per_process_gpu_memory_fraction=0.8))  # % of GPU allocated
+  config.gpu_options.allow_growth = True
 
   # This is the runtime config for tensorflow estimators
   run_config = tpu_config.RunConfig(
-      master=master,  # local tensorflow server
-      model_dir=model_dir,  # directory pointing to model checkpoints (e.g.ckpt/pegasus_ckpt/cnn_dailymail)
-      session_config=tf.ConfigProto(
-          allow_soft_placement=True, log_device_placement=False),  # some session config???
-      tpu_config=tpu_config.TPUConfig(iterations_per_loop),  # another estimator config - set to 1000
-      save_checkpoints_steps=save_checkpoints_steps,  # number of steps to save ckpt, 1000 by default
-      keep_checkpoint_max=keep_checkpoint_max)  # number of recent ckpt to keep (older deleted), 5 by default
+      master=master,
+      model_dir=model_dir,
+      session_config=config,
+      tpu_config=tpu_config.TPUConfig(iterations_per_loop),
+      save_checkpoints_steps=save_checkpoints_steps,
+      keep_checkpoint_max=keep_checkpoint_max)
 
-  # It will return the tensorflow estimator created as we would want it to be
   return tpu_estimator.TPUEstimator(
-      # This is to instantiate the estimator model function with the following params:
-      # use_tpu = False
-      # model_params = name of model (e.g. cnn_dailymail_transformer) - points to pegasus/public_params.py
-      # model_dir = directory pointing to model checkpoints (e.g.ckpt/pegasus_ckpt/cnn_dailymail)
-      # include_features_preds = True
-      # decode_keys = ()
-      # train_init_checkpoint = ckpt/pegasus_ckpt/model.ckpt-1500000
-      # train_warmup_steps = 10000
       model_fn=_estimator_model_fn(use_tpu, model_params, model_dir,
                                    include_features_in_predictions, decode_keys,
                                    train_init_checkpoint, train_warmup_steps),
@@ -77,7 +71,7 @@ def create_estimator(master,  # local tensorflow server
       train_batch_size=model_params.batch_size * num_shards,  # batch_size * 1 by default
       eval_batch_size=model_params.batch_size * num_shards,  # batch_size * 1 by default
       predict_batch_size=model_params.batch_size * num_shards,  # batch_size * 1 by default
-      config=run_config)  # the runtime config as defined above
+      config=run_config)
 
 
 def _estimator_model_fn(use_tpu, model_params, model_dir,
@@ -85,8 +79,6 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
                         train_init_checkpoint, train_warmup_steps):
   """Returns an estimator model function."""
 
-  # The model input function points to infeed.get_input_fn() which during training
-  # defines the mode to be TRAIN
   def model_fn(features, labels, mode, config, params):
     """Estimator model function."""
 
@@ -352,7 +344,7 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
     if mode == tf.estimator.ModeKeys.EVAL:
       eval_metrics = model_params.estimator_eval_metrics_fn(features, outputs)
       return tpu_estimator.TPUEstimatorSpec(
-          mode=mode, loss=loss, eval_metrics=eval_metrics)
+          mode=mode, loss=XENT_loss, eval_metrics=eval_metrics)
 
   return model_fn
 
