@@ -24,7 +24,7 @@ nohup python3 pegasus/bin/train.py --params=pubmed_transformer --param_overrides
 # nohup python3 pegasus/bin/evaluate.py --params=pubmed_transformer --param_overrides=vocab_filename=ckpt/pegasus_ckpt/c4.unigram.newline.10pct.96000.model,batch_size=1,beam_size=8,beam_alpha=0.8 --model_dir=ckpt/pegasus_ckpt/pubmed_1k/model.ckpt-100000 --evaluate_test > pubmed_XENT_eval1_1k.txt
 
 # MULTI-NEWS
-nohup python3 pegasus/bin/train.py --params=multi_news_transformer --param_overrides=vocab_filename=ckpt/pegasus_ckpt/c4.unigram.newline.10pct.96000.model,train_pattern=tfds:multi_news-train-take_1000,batch_size=1,learning_rate=0.0005,train_steps=100000 --train_init_checkpoint=ckpt/pegasus_ckpt/model.ckpt-1500000 --model_dir=ckpt/experiments/xent1/multinews > mulitnews_xent_1k_train.txt
+nohup python3 pegasus/bin/train.py --params=multi_news_transformer --param_overrides=vocab_filename=ckpt/pegasus_ckpt/c4.unigram.newline.10pct.96000.model,train_pattern=tfds:multi_news-train-take_1000,batch_size=1,learning_rate=0.0005,train_steps=100000 --train_init_checkpoint=ckpt/pegasus_ckpt/model.ckpt-1500000 --model_dir=ckpt/experiments/xent1/multinews_1k > mulitnews_xent_1k_train.txt
 # nohup python3 pegasus/bin/evaluate.py --params=multi_news_transformer --param_overrides=vocab_filename=ckpt/pegasus_ckpt/c4.unigram.newline.10pct.96000.model,batch_size=1,beam_size=8,beam_alpha=0.9 --model_dir=ckpt/pegasus_ckpt/multinews_1k/model.ckpt-80000 --evaluate_test > multinews_XENT_eval1_1k.txt
 
 # BILLSUM
