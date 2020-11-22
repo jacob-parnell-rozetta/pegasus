@@ -52,7 +52,7 @@ def create_estimator(master,
   # Define GPU Config for session
   config = tf.ConfigProto(allow_soft_placement=True, log_device_placement=False)
   #                         gpu_options=tf.GPUOptions(per_process_gpu_memory_fraction=0.8))  # % of GPU allocated
-  config.gpu_options.allow_growth = True
+  config.gpu_options.allow_growth = False
 
   # This is the runtime config for tensorflow estimators
   run_config = tpu_config.RunConfig(

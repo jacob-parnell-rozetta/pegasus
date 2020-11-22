@@ -86,22 +86,23 @@ def main(_):
     train_steps_list = [params.train_steps]
 
   logging.warning("Flag 2: Training the Estimator")
-  # EVALUATION DURING TRAINING HOOK
-  # TODO: read loss value output and stop training early
-  # is steps=100 run on entire validation set?
+  # EVALUATION DURING TRAINING HOOK - exhaust the NLL
   input_fn = infeed.get_input_fn(params.parser, params.dev_pattern, tf.estimator.ModeKeys.EVAL)
   evaluator = tf.estimator.experimental.InMemoryEvaluatorHook(
-      estimator, input_fn, steps=100, hooks=None, name="evaluate-dev", every_n_iter=1000
-  )
-  # eval_metrics = model_params.estimator_eval_metrics_fn(features, outputs)
+      estimator, input_fn, steps=100, hooks=None, name="evaluate_dev", every_n_iter=1000)
+  early_stopping = tf.estimator.experimental.stop_if_no_decrease_hook(
+      estimator, metric_name='loss', eval_dir=estimator.eval_dir() + "_evaluate_dev",
+      max_steps_without_decrease=3000, min_steps=100, run_every_secs=None, run_every_steps=1000)
+
   for train_steps in train_steps_list:
-    estimator.train(
-        input_fn=infeed.get_input_fn(
-            params.parser,
-            params.train_pattern,
-            tf.estimator.ModeKeys.TRAIN,
-            parallelism=FLAGS.train_infeed_parallelism),
-        max_steps=train_steps, hooks=[evaluator])
+      estimator.train(
+          input_fn=infeed.get_input_fn(
+              params.parser,
+              params.train_pattern,
+              tf.estimator.ModeKeys.TRAIN,
+              parallelism=FLAGS.train_infeed_parallelism),
+          max_steps=train_steps,
+          hooks=[evaluator, early_stopping])
 
 
 if __name__ == "__main__":
