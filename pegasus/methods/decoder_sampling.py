@@ -59,12 +59,12 @@ def non_beam_sampling(model_params, features, max_seq_len, beam_params, sentence
              the [BxN] logits stacked from each decoding loop into a [BxTxV] tensor.
     """
     # SAMPLE TOKENS FROM DECODER (NOT USING BEAM SEARCH)
-    preds_dict, preds_logits_BxTxV = model_params.model().predict(features, max_seq_len,
-                                                                  beam_size=1,
-                                                                  top_k=beam_params["top_k"],
-                                                                  top_p=beam_params["top_p"],
-                                                                  temperature=beam_params["temperature"],
-                                                                  sampling=True)
+    preds_dict, _, preds_logits_BxTxV = model_params.model().predict(features, max_seq_len,
+                                                                     beam_size=1,
+                                                                     top_k=beam_params["top_k"],
+                                                                     top_p=beam_params["top_p"],
+                                                                     temperature=beam_params["temperature"],
+                                                                     sampling=True)
     preds = preds_dict["outputs"][0]  # gets the IDs -> by default are argmax(logits) or H(z)
 
     # convert logits to logp and extract logp values
