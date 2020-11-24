@@ -59,13 +59,17 @@ def non_beam_sampling(model_params, features, max_seq_len, beam_params, sentence
              the [BxN] logits stacked from each decoding loop into a [BxTxV] tensor.
     """
     # SAMPLE TOKENS FROM DECODER (NOT USING BEAM SEARCH)
-    preds_dict, preds_logp_BxT, preds_BxTxV = model_params.model().predict(features, max_seq_len,
-                                                                           beam_size=1,
-                                                                           top_k=beam_params["top_k"],
-                                                                           top_p=beam_params["top_p"],
-                                                                           temperature=beam_params["temperature"],
-                                                                           sampling=True)
+    preds_dict, preds_logits_BxTxV = model_params.model().predict(features, max_seq_len,
+                                                                  beam_size=1,
+                                                                  top_k=beam_params["top_k"],
+                                                                  top_p=beam_params["top_p"],
+                                                                  temperature=beam_params["temperature"],
+                                                                  sampling=True)
     preds = preds_dict["outputs"][0]  # gets the IDs -> by default are argmax(logits) or H(z)
+
+    # convert logits to logp and extract logp values
+    logp_BxTxV = tf.log(tf.clip_by_value(tf.math.softmax(preds_logits_BxTxV, axis=2), 1e-8, 1.0))
+    preds_logp_BxT = tf.reshape(tf.reduce_max(logp_BxTxV, axis=2), [model_params.batch_size, max_seq_len])
 
     if sentence_score:
         score = tf.exp((1 / max_seq_len) * tf.reduce_sum(preds_logp_BxT, axis=1))  # sentence score 0-1
@@ -73,7 +77,7 @@ def non_beam_sampling(model_params, features, max_seq_len, beam_params, sentence
         score = None
     return {"ids": tf.reshape(preds, [model_params.batch_size, max_seq_len]),
             "logp_BxT": preds_logp_BxT, "sent_score": score,
-            "logp_BxTxV": preds_BxTxV["beam1_logp"], "logits_BxTxV": preds_BxTxV["beam1_logits"]}
+            "logp_BxTxV": logp_BxTxV, "logits_BxTxV": preds_logits_BxTxV}
 
 
 # def beam_sampling(model_params, features, max_seq_len, batch_index, sequence_index, beam_params):

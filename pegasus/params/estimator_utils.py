@@ -93,7 +93,7 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
 
     # PREDICTION (e.g. evaluate)
     if mode == tf.estimator.ModeKeys.PREDICT:
-      predictions, _, _ = model_params.estimator_prediction_fn(features)
+      predictions, _ = model_params.estimator_prediction_fn(features)
 
       if include_features_in_predictions:
         predictions.update(features)
