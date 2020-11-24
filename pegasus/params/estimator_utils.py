@@ -169,10 +169,10 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # Note: the logp_BxTxV are analogous to z -> should be used for RELAX, preds are the BxT of these -> b=H(z), and
       # logp are the corresponding values (score is normalised to sentence score).
       """
-      # greedy_beam_params = {"beam_size": 3, "top_k": 0, "top_p": 0.0, "temperature": 0.0}
-      # random_beam_params = {"beam_size": 3, "top_k": 0, "top_p": 0.0, "temperature": 1.0}
-      # topk_beam_params = {"beam_size": 3, "top_k": 10000, "top_p": 0.0, "temperature": 1.0}
-      # topp_beam_params = {"beam_size": 3, "top_k": 0, "top_p": 0.9, "temperature": 1.0}
+      # greedy_beam_params = {"_beam": 3, "top_k": 0, "top_p": 0.0, "temperature": 0.0}
+      # random_beam_params = {"_beam": 3, "top_k": 0, "top_p": 0.0, "temperature": 1.0}
+      # topk_beam_params = {"_beam": 3, "top_k": 10000, "top_p": 0.0, "temperature": 1.0}
+      # topp_beam_params = {"_beam": 3, "top_k": 0, "top_p": 0.9, "temperature": 1.0}
 
       # greedy_dict = non_beam_sampling(model_params, features, max_seq_len,
       #                                 beam_params=greedy_beam_params, sentence_score=False)
