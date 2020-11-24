@@ -1,10 +1,11 @@
 import tensorflow as tf
 
 
-def risk_loss(max_seq_len, rouge_losses=None, logps=None, n=2):
+def risk_loss(batch_size, max_seq_len, rouge_losses=None, logps=None, n=2):
     """
     Calculates the expected risk minimisation loss, given by:
     L_risk = -r(u,y)*p(u|x,theta) -> U(x) is a set of candidate translations
+    :param batch_size: batch size for dataset - normally 1
     :param max_seq_len: the maximum sequence length for a given dataset
     :param rouge_losses: the rouge losses that will be used for this loss
     :param logps: the logp that are derived from the beam search algorithm. If beam_size > 1, the returned logp
@@ -12,6 +13,13 @@ def risk_loss(max_seq_len, rouge_losses=None, logps=None, n=2):
     :param n: the number of samples to pass into the loss
     :return: Scalar value denoting the risk loss
     """
+    # reshape to BxT
+    logps[0] = tf.reshape(logps[0], [batch_size, max_seq_len])
+    logps[1] = tf.reshape(logps[1], [batch_size, max_seq_len])
+
+    if n == 3:
+        logps[2] = tf.reshape(logps[2], [batch_size, max_seq_len])
+
     if n == 2:
         # Calculate f_u for as many sequences
         f_u_1 = tf.exp(tf.reduce_mean(logps[0], axis=1))

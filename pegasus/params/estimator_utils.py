@@ -248,7 +248,8 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
 
       ##### EXPECTED RISK MINIMISATION ##############################################################################
       """ Calculate the RISK loss using n sequences from sampling process. """
-      # L_risk = risk_loss(max_seq_len, rouge_losses=[rouge_loss_argmax, rouge_loss_soft, rouge_loss_extra],
+      # L_risk = risk_loss(model_params.batch_size, max_seq_len,
+      #                    rouge_losses=[rouge_loss_argmax, rouge_loss_soft, rouge_loss_extra],
       #                    logps=[topk_dict["logp1"], topk_dict["logp2"], topk_dict["logp3"]], n=3)
 
       ##### MIXED LOSS ##############################################################################################
