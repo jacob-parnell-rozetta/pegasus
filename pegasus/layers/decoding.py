@@ -172,7 +172,7 @@ def left2right_decode(symbols_to_logits_fn,
          init_logits_BxTxV])
 
     # {ids of argmax(logits), logp of sequence where argmax, dict(entire logp of beam, entire logits of beam)}
-    return decodes, logits_BxTxV
+    return decodes, None, logits_BxTxV
 
   else:
 
@@ -183,8 +183,14 @@ def left2right_decode(symbols_to_logits_fn,
 
       length_norm_fn = beam_search.length_normalization(beam_start, beam_alpha,
                                                         beam_min, beam_max, -1e3)
-      beams, _ = beam_search.beam_search(
+      beams, beam_scores, beam_dict = beam_search.beam_search(
           symbols_to_logits_fn_with_sampling,
           tf.zeros([batch_size, max_decode_len], dtype=tf.int32),
-          context_BxU_dict, vocab_size, beam_size, length_norm_fn, eos_id)
-      return tf.cast(beams[:, 0, :], dtype)
+          context_BxU_dict, vocab_size, beam_size, length_norm_fn, eos_id, sampling)
+
+      final_beams = {}
+      for i in range(beam_size):
+          final_beams[i] = tf.cast(beams[:, i, :], dtype)
+
+      return final_beams, beam_scores, beam_dict
+      # return tf.cast(beams[:, 0, :], dtype)

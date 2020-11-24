@@ -22,7 +22,7 @@ import numpy as np
 from pegasus.ops import public_parsing_ops
 from pegasus.eval.rouge_tensors import evaluate_r1, evaluate_r2, evaluate_rl
 from pegasus.models.control_variate import ffn_baseline, control_variate, Q_func
-from pegasus.methods.decoder_sampling import iid_sampling, non_beam_sampling
+from pegasus.methods.decoder_sampling import iid_sampling, non_beam_sampling, beam_sampling
 from pegasus.methods.reinforce import rouge_decoding, iid_log_probs
 from pegasus.methods.risk import risk_loss
 from pegasus.methods.relax import create_variables, create_cv_target, create_variables_from_samples
@@ -93,7 +93,7 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
 
     # PREDICTION (e.g. evaluate)
     if mode == tf.estimator.ModeKeys.PREDICT:
-      predictions, _ = model_params.estimator_prediction_fn(features)
+      predictions, _, _ = model_params.estimator_prediction_fn(features)
 
       if include_features_in_predictions:
         predictions.update(features)
@@ -169,10 +169,10 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # Note: the logp_BxTxV are analogous to z -> should be used for RELAX, preds are the BxT of these -> b=H(z), and
       # logp are the corresponding values (score is normalised to sentence score).
       """
-      # greedy_beam_params = {"top_k": 0, "top_p": 0.0, "temperature": 0.0}
-      # random_beam_params = {"top_k": 0, "top_p": 0.0, "temperature": 1.0}
-      # topk_beam_params = {"top_k": 10000, "top_p": 0.0, "temperature": 1.0}
-      # topp_beam_params = {"top_k": 0, "top_p": 0.9, "temperature": 1.0}
+      # greedy_beam_params = {"beam_size": 3, "top_k": 0, "top_p": 0.0, "temperature": 0.0}
+      # random_beam_params = {"beam_size": 3, "top_k": 0, "top_p": 0.0, "temperature": 1.0}
+      # topk_beam_params = {"beam_size": 3, "top_k": 10000, "top_p": 0.0, "temperature": 1.0}
+      # topp_beam_params = {"beam_size": 3, "top_k": 0, "top_p": 0.9, "temperature": 1.0}
 
       # greedy_dict = non_beam_sampling(model_params, features, max_seq_len,
       #                                 beam_params=greedy_beam_params, sentence_score=False)
@@ -182,6 +182,16 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       #                               beam_params=topk_beam_params, sentence_score=False)
       # topp_dict = non_beam_sampling(model_params, features, max_seq_len,
       #                               beam_params=topp_beam_params, sentence_score=False)
+
+      # BEAM SEARCH
+      # greedy_dict = beam_sampling(model_params, features, max_seq_len, batch_index, sequence_index,
+      #                             beam_params=greedy_beam_params)
+      # random_dict = beam_sampling(model_params, features, max_seq_len, batch_index, sequence_index,
+      #                             beam_params=random_beam_params)
+      # topk_dict = beam_sampling(model_params, features, max_seq_len, batch_index, sequence_index,
+      #                           beam_params=topk_beam_params)
+      # topp_dict = beam_sampling(model_params, features, max_seq_len, batch_index, sequence_index,
+      #                           beam_params=topp_beam_params)
 
       ##### RELAX VARIABLES #########################################################################################
       """ Here we create the variables for RELAX. Pass in the logp, logits, and z that has already been 
