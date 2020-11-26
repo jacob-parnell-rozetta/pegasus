@@ -105,7 +105,7 @@ def left2right_decode(symbols_to_logits_fn,
                       top_k=0,
                       top_p=0.0,
                       eos_id=EOS_ID,
-                      sampling=False):
+                      training=False):
   """left to right decode.
 
   Notations:
@@ -129,7 +129,7 @@ def left2right_decode(symbols_to_logits_fn,
       (consider all symbols).
     top_p: Nucleus sampling probability.
     eos_id: end of token id, default to 1.
-    sampling: for sampling during training, default to False for predictions
+    training: for sampling during training, default to False for predictions
 
   Returns:
     decodes: Tensor[batch, decode_len]
@@ -145,7 +145,7 @@ def left2right_decode(symbols_to_logits_fn,
       logits_BxV = symbols_to_logits_fn(decodes_BxT, cache_BxU_dict, i)
       logits_BxV = process_logits(logits_BxV, top_k, top_p, temperature)  # returns z
       decodes_BxT = inplace_update_i(decodes_BxT, tf.argmax(logits_BxV, -1), i)  # ids of argmax(logits)
-      if sampling:
+      if training:
         decodes_BxT = tf.stop_gradient(decodes_BxT)  # remove from graph
         # logp_BxV = tf.log(tf.clip_by_value(tf.math.softmax(logits_BxV, axis=1), 1e-8, 1.0))  # logits -> logp
         # logp_BxT = inplace_update_i(logp_BxT, tf.broadcast_to(tf.reduce_max(logp_BxV), [1, ]), i)  # logp sequence
@@ -186,7 +186,7 @@ def left2right_decode(symbols_to_logits_fn,
       beams, beam_scores, beam_dict = beam_search.beam_search(
           symbols_to_logits_fn_with_sampling,
           tf.zeros([batch_size, max_decode_len], dtype=tf.int32),
-          context_BxU_dict, vocab_size, beam_size, length_norm_fn, eos_id, sampling)
+          context_BxU_dict, vocab_size, beam_size, length_norm_fn, eos_id, training)
 
       final_beams = {}
       for i in range(beam_size):

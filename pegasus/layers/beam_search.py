@@ -71,7 +71,7 @@ def beam_search(symbols_to_logits_fn,
                 beam_size,
                 length_norm_fn,
                 eos_id=1,
-                sampling=False):
+                training=False):
   """Beam search.
   Args:
     symbols_to_logits_fn: fn(seq_BxT, cache_BxU, i) -> (logits_BxV, cache_BxU)
@@ -81,7 +81,7 @@ def beam_search(symbols_to_logits_fn,
     beam_size: beam size.
     length_norm_fn: length normalization function.
     eos_id: end of sequence.
-    sampling: for training.
+    training: for training.
   Returns:
     Tuple of (beams_BxMxT, scores_BxM). Beam searched sequences and scores.
   """
@@ -92,7 +92,7 @@ def beam_search(symbols_to_logits_fn,
 
   def _loop_body(i, alive_seq_BxMxT, alive_log_probs_BxM, alive_cache_BxMxU,
                  finished_seq_BxMxT, finished_scores_BxM,
-                 init_finished_logitsM1_BxTxV, init_finished_logitsM2_BxTxV, init_finished_logitsM3_BxTxV):
+                 logitsM1_BxTxV, logitsM2_BxTxV, logitsM3_BxTxV):
     """Beam search loop body."""
     # Decode one step with beam
     logits_BMxV, cache_BMxU = symbols_to_logits_fn(
@@ -101,10 +101,10 @@ def beam_search(symbols_to_logits_fn,
     logits_BxMxV = _unflatten_beam_dim(logits_BMxV, M)
     new_cache_BxMxU = tf.nest.map_structure(lambda t: _unflatten_beam_dim(t, M),
                                             cache_BMxU)
-    logitsM1_BxTxV, logitsM2_BxTxV, logitsM3_BxTxV = _separate(logits_BxMxV,
-                                                               [init_finished_logitsM1_BxTxV,
-                                                                init_finished_logitsM2_BxTxV,
-                                                                init_finished_logitsM3_BxTxV], B, T, V, M, i)
+    if training:
+        logitsM1_BxTxV, logitsM2_BxTxV, logitsM3_BxTxV = _separate(logits_BxMxV,
+                                                                   [logitsM1_BxTxV, logitsM1_BxTxV, logitsM1_BxTxV],
+                                                                   B, T, V, M, i)
 
     # select top 2 * beam_size and fill alive and finished.
     log_probs_BxMxV = logits_BxMxV - tf.reduce_logsumexp(
@@ -154,11 +154,13 @@ def beam_search(symbols_to_logits_fn,
   init_finished_seq_BxMxT = tf.zeros(tf.shape(init_alive_seq_BxMxT), int_dtype)
   init_finished_scores_BxM = tf.zeros([B, M], dtype=dtype) + dtype.min
 
+  # added placeholder tensors to append values to
   init_finished_logitsM1_BxTxV = tf.zeros([B, T, V], dtype=dtype)
   init_finished_logitsM2_BxTxV = tf.zeros([B, T, V], dtype=dtype)
   init_finished_logitsM3_BxTxV = tf.zeros([B, T, V], dtype=dtype)
 
   # run loop.
+  backprop_flag = True if training else False  # flag to allow backpropagation for training (remove non-cont funcs)
   (_, final_alive_seq_BxMxT, final_alive_scores_BxM, _,
    final_finished_seq_BxMxT, final_finished_scores_BxM,
    logitsM1_BxTxV, logitsM2_BxTxV, logitsM3_BxTxV) = tf.while_loop(
@@ -171,7 +173,7 @@ def beam_search(symbols_to_logits_fn,
            init_finished_logitsM1_BxTxV, init_finished_logitsM2_BxTxV, init_finished_logitsM3_BxTxV
        ],
        parallel_iterations=1,
-       back_prop=False,
+       back_prop=backprop_flag,
        maximum_iterations=T,
    )
 
@@ -235,9 +237,7 @@ def _inplace_update_i(tensor_BxL, updates_B, i):
   batch_size = tensor_BxL.shape[0]
   indices_Bx2 = tf.stack([
       tf.range(batch_size, dtype=tf.int64),
-      tf.fill([batch_size], tf.cast(i, tf.int64))
-  ],
-                         axis=-1)
+      tf.fill([batch_size], tf.cast(i, tf.int64))], axis=-1)
   return tf.tensor_scatter_nd_update(tensor_BxL, indices_Bx2, updates_B)
 
 

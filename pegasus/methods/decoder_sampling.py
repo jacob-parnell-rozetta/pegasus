@@ -64,7 +64,7 @@ def non_beam_sampling(model_params, features, max_seq_len, beam_params, sentence
                                                                      top_k=beam_params["top_k"],
                                                                      top_p=beam_params["top_p"],
                                                                      temperature=beam_params["temperature"],
-                                                                     sampling=True)
+                                                                     training=True)
     preds = preds_dict["outputs"][0]  # gets the IDs -> by default are argmax(logits) or H(z)
 
     # convert logits to logp and extract logp values
@@ -98,7 +98,7 @@ def beam_sampling(model_params, features, max_seq_len, batch_index, sequence_ind
                                                                        top_k=beam_params["top_k"],
                                                                        top_p=beam_params["top_p"],
                                                                        temperature=beam_params["temperature"],
-                                                                       sampling=True)
+                                                                       training=True)
     preds = preds_dict["outputs"][0]  # gets the IDs
     preds_score = preds_scores[:, 0]  # sentence score (sum of log_prob) for first
     logp1_BxTxV = tf.log(tf.clip_by_value(tf.math.softmax(beam_dict["beam_1_logits"], axis=2), 1e-8, 1.0))
@@ -134,5 +134,6 @@ def beam_sampling(model_params, features, max_seq_len, batch_index, sequence_ind
         logp3_BxT = tf.gather_nd(logp3_BxTxV, index_tensor3)  # extract logps at ids
 
     return {"ids1": preds, "sent_score1": preds_score, "logp1": logp1_BxT, "logp1_BxTxV": logp1_BxTxV,
+            "logits1_BxTxV": beam_dict["beam_1_logits"],
             "ids2": preds2, "sent_score2": preds_score2, "logp2": logp2_BxT, "logp2_BxTxV": logp2_BxTxV,
             "ids3": preds3, "sent_score3": preds_score3, "logp3": logp3_BxT, "logp3_BxTxV": logp3_BxTxV}

@@ -19,6 +19,7 @@ from pegasus.params import all_params  # pylint: disable=unused-import
 from pegasus.params import estimator_utils
 from pegasus.params import registry
 import tensorflow as tf
+tf.compat.v1.enable_control_flow_v2()
 from absl import logging
 
 flags = tf.flags
@@ -51,6 +52,8 @@ flags.DEFINE_string("train_steps_overrides", "",
                      "Ensure that model is saved at specified train steps."))
 flags.DEFINE_integer("tfds_train_examples", -1,
                      "Set number of examples for tfds type data source")
+flags.DEFINE_boolean("eval_during_training", False,
+                     "To evaluate on a validation set during training.")
 
 
 def main(_):
@@ -86,23 +89,36 @@ def main(_):
     train_steps_list = [params.train_steps]
 
   logging.warning("Flag 2: Training the Estimator")
-  # EVALUATION DURING TRAINING HOOK - exhaust the NLL
-  input_fn = infeed.get_input_fn(params.parser, params.dev_pattern, tf.estimator.ModeKeys.EVAL)
-  evaluator = tf.estimator.experimental.InMemoryEvaluatorHook(
-      estimator, input_fn, steps=100, hooks=None, name="evaluate_dev", every_n_iter=1000)
-  early_stopping = tf.estimator.experimental.stop_if_no_decrease_hook(
-      estimator, metric_name='loss', eval_dir=estimator.eval_dir() + "_evaluate_dev",
-      max_steps_without_decrease=3000, min_steps=100, run_every_secs=None, run_every_steps=1000)
+  if FLAGS.eval_during_training:
+    # EVALUATION DURING TRAINING HOOK - exhaust the NLL
+    input_fn = infeed.get_input_fn(params.parser, params.dev_pattern, tf.estimator.ModeKeys.EVAL)
+    evaluator = tf.estimator.experimental.InMemoryEvaluatorHook(
+        estimator, input_fn, steps=100, hooks=None, name="evaluate_dev", every_n_iter=1000)
+    early_stopping = tf.estimator.experimental.stop_if_no_decrease_hook(
+        estimator, metric_name='loss', eval_dir=estimator.eval_dir() + "_evaluate_dev",
+        max_steps_without_decrease=3000, min_steps=100, run_every_secs=None, run_every_steps=1000)
 
-  for train_steps in train_steps_list:
-      estimator.train(
-          input_fn=infeed.get_input_fn(
-              params.parser,
-              params.train_pattern,
-              tf.estimator.ModeKeys.TRAIN,
-              parallelism=FLAGS.train_infeed_parallelism),
-          max_steps=train_steps,
-          hooks=[evaluator, early_stopping])
+    # Train the estimator with evaluation hooks
+    for train_steps in train_steps_list:
+        estimator.train(
+            input_fn=infeed.get_input_fn(
+                params.parser,
+                params.train_pattern,
+                tf.estimator.ModeKeys.TRAIN,
+                parallelism=FLAGS.train_infeed_parallelism),
+            max_steps=train_steps,
+            hooks=[evaluator, early_stopping])
+
+  else:
+      # Train the estimator with no evaluation hooks
+      for train_steps in train_steps_list:
+          estimator.train(
+              input_fn=infeed.get_input_fn(
+                  params.parser,
+                  params.train_pattern,
+                  tf.estimator.ModeKeys.TRAIN,
+                  parallelism=FLAGS.train_infeed_parallelism),
+              max_steps=train_steps)
 
 
 if __name__ == "__main__":
