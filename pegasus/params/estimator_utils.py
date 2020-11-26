@@ -211,8 +211,7 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # additional_pred_text = rouge_decoding(topk_dict["ids3"], model_params)  # ADDITIONAL SAMPLES
 
       # Token-level ROUGE
-      # ROUGE_token = tf.py_function(rouge_token,(outputs["targets"], random_dict["ids"],
-      #                                           pen=False, norm=False), tf.float32)
+      # ROUGE_token = tf.py_function(rouge_token,(outputs["targets"], random_dict["ids"], 0, 0), tf.float32)
 
       # CALCULATE ROUGE LOSS: ROUGE score -> ROUGE loss = -ROUGE score
       # NOTE: for ROUGE variant, change value (0: precision, 1: recall, 2: f1)

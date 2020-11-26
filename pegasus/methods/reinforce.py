@@ -14,14 +14,14 @@ def rouge_decoding(ids, model_params):
     return decode_text
 
 
-def rouge_token(ref, pred, pen=False, norm=False):
+def rouge_token(ref, pred, pen=0, norm=0):
     ref = ref.numpy().tolist()
     pred = pred.numpy().tolist()
     token_level_score = [ref.count(x) for x in pred]
-    if pen:
+    if pen == 1:
         token_level_score = [x - 0.5 for x in token_level_score]
 
-    if norm:
+    if norm == 1:
         token_level_score = [x / len(ref) for x in token_level_score]
 
     return token_level_score
