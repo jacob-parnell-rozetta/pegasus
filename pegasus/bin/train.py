@@ -19,7 +19,7 @@ from pegasus.params import all_params  # pylint: disable=unused-import
 from pegasus.params import estimator_utils
 from pegasus.params import registry
 import tensorflow as tf
-tf.compat.v1.enable_control_flow_v2()
+# tf.compat.v1.enable_control_flow_v2()  # TODO: only use for RELAX (second order deriv in while loop)
 from absl import logging
 
 flags = tf.flags

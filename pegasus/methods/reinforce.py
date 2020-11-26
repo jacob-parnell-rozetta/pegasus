@@ -14,6 +14,19 @@ def rouge_decoding(ids, model_params):
     return decode_text
 
 
+def rouge_token(ref, pred, pen=False, norm=False):
+    ref = ref.numpy().tolist()
+    pred = pred.numpy().tolist()
+    token_level_score = [ref.count(x) for x in pred]
+    if pen:
+        token_level_score = [x - 0.5 for x in token_level_score]
+
+    if norm:
+        token_level_score = [x / len(ref) for x in token_level_score]
+
+    return token_level_score
+
+
 def iid_log_probs(ids, batch_index, sequence_index, logp):
     """
     Stacks the ids into a matrix that allows you to extract the corresponding logp

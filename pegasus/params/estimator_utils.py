@@ -23,7 +23,7 @@ from pegasus.ops import public_parsing_ops
 from pegasus.eval.rouge_tensors import evaluate_r1, evaluate_r2, evaluate_rl
 from pegasus.models.control_variate import ffn_baseline, control_variate, Q_func
 from pegasus.methods.decoder_sampling import iid_sampling, non_beam_sampling, beam_sampling
-from pegasus.methods.reinforce import rouge_decoding, iid_log_probs
+from pegasus.methods.reinforce import rouge_decoding, iid_log_probs, rouge_token
 from pegasus.methods.risk import risk_loss
 from pegasus.methods.relax import create_variables, create_cv_target, create_variables_from_samples
 from tensor2tensor.utils import adafactor
@@ -209,6 +209,10 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # argmax_pred_text = rouge_decoding(topk_dict["ids1"], model_params)  # ARGMAX SAMPLES
       # soft_pred_text = rouge_decoding(random_dict["ids1"], model_params)  # SOFTMAX SAMPLES
       # additional_pred_text = rouge_decoding(topk_dict["ids3"], model_params)  # ADDITIONAL SAMPLES
+
+      # Token-level ROUGE
+      # ROUGE_token = tf.py_function(rouge_token,(outputs["targets"], random_dict["ids"],
+      #                                           pen=False, norm=False), tf.float32)
 
       # CALCULATE ROUGE LOSS: ROUGE score -> ROUGE loss = -ROUGE score
       # NOTE: for ROUGE variant, change value (0: precision, 1: recall, 2: f1)
