@@ -68,19 +68,17 @@ def main(_):
       FLAGS.master,
       FLAGS.model_dir,
       FLAGS.use_tpu,
-      FLAGS.iterations_per_loop,  # 1000 by default
-      FLAGS.num_shards,  # 1 by default
+      FLAGS.iterations_per_loop,
+      FLAGS.num_shards,
       params,
       train_init_checkpoint=FLAGS.train_init_checkpoint,
-      train_warmup_steps=FLAGS.train_warmup_steps,  # number of steps to warm up, 10000 by default
+      train_warmup_steps=FLAGS.train_warmup_steps,
       save_checkpoints_steps=FLAGS.save_checkpoints_steps,
       keep_checkpoint_max=FLAGS.keep_checkpoint_max)
 
   # Split training into sesions, walkaround yaqs/5313417304080384
   # Tensorflow estimator doesn't respect save_checkpoints_steps when running in
   # distributed environment
-  # A list of integers that overrides the train steps from params, ensures the model is saved at specific
-  # train steps - is not defined by default
   if FLAGS.train_steps_overrides:
     train_steps_list = [
         int(s) for s in FLAGS.train_steps_overrides.split(",") if int(s) > 0
