@@ -84,11 +84,22 @@ def inplace_update_i(tensor_BxL, updates_B, i):
   """Inplace update a tensor. B: batch_size, L: tensor length."""
   batch_size = tensor_BxL.shape[0]
   indices_Bx2 = tf.stack([
+      tf.range(batch_size, dtype=tf.int32),
+      tf.fill([batch_size], tf.cast(i, tf.int32))
+  ],
+                         axis=-1)
+  return tf.tensor_scatter_nd_update(tensor_BxL, indices_Bx2, tf.cast(updates_B, tf.int32))
+
+
+def inplace_update_i2(tensor_BxL, updates_B, i):
+  """Inplace update a tensor. B: batch_size, L: tensor length."""
+  batch_size = tensor_BxL.shape[0]
+  indices_Bx2 = tf.stack([
       tf.range(batch_size, dtype=tf.int64),
       tf.fill([batch_size], tf.cast(i, tf.int64))
   ],
                          axis=-1)
-  return tf.tensor_scatter_nd_update(tensor_BxL, indices_Bx2, updates_B)
+  return tf.tensor_scatter_nd_update(tensor_BxL, indices_Bx2, tf.cast(updates_B, tf.float32))
 
 
 def left2right_decode(symbols_to_logits_fn,
@@ -146,11 +157,11 @@ def left2right_decode(symbols_to_logits_fn,
       logits_BxV = process_logits(logits_BxV, top_k, top_p, temperature)  # returns z
       decodes_BxT = inplace_update_i(decodes_BxT, tf.argmax(logits_BxV, -1), i)  # ids of argmax(logits)
       if training:
-        decodes_BxT = tf.stop_gradient(decodes_BxT)  # remove from graph
+        decodes_BxT = tf.cast(tf.stop_gradient(decodes_BxT), dtype)  # remove from graph
         # logp_BxV = tf.log(tf.clip_by_value(tf.math.softmax(logits_BxV, axis=1), 1e-8, 1.0))  # logits -> logp
         # logp_BxT = inplace_update_i(logp_BxT, tf.broadcast_to(tf.reduce_max(logp_BxV), [1, ]), i)  # logp sequence
         # logp_BxTxV = inplace_update_i(logp_BxTxV, logp_BxV, i)  # logp sequence x vocab
-        logits_BxTxV = inplace_update_i(logits_BxTxV, logits_BxV, i)  # logits sequence x vocab
+        logits_BxTxV = inplace_update_i2(logits_BxTxV, logits_BxV, i)  # logits sequence x vocab
 
       return i + 1, decodes_BxT, cache_BxU_dict, logits_BxTxV
 
@@ -159,6 +170,7 @@ def left2right_decode(symbols_to_logits_fn,
       return tf.logical_and(i < max_decode_len,
                             tf.logical_not(tf.reduce_all(finished_B)))
 
+    dtype = tf.int32 if training else dtype
     init_dec_BxT = tf.zeros([batch_size, max_decode_len], dtype=dtype)
 
     # added placeholder tensors to append values to

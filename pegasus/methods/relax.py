@@ -50,7 +50,7 @@ def create_variables_from_samples(sample_z_logits, sample_z_logp, sample_b, batc
                           dtype=tf.float32)
 
     # create index tensor where b is the argmax, to use as indexer for substitution
-    b_new = tf.squeeze(sample_b, 0)  # assumes sample_b = [BxT]
+    b_new = tf.cast(tf.squeeze(sample_b, 0), tf.int64)  # assumes sample_b = [BxT]
     index_tensor_b = tf.expand_dims(tf.stack([batch_index, sequence_index, b_new], axis=1), 0)
 
     v_b = tf.gather_nd(v, index_tensor_b)  # values of v where b are the argmax indexes
