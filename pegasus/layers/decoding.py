@@ -84,11 +84,11 @@ def inplace_update_i(tensor_BxL, updates_B, i):
   """Inplace update a tensor. B: batch_size, L: tensor length."""
   batch_size = tensor_BxL.shape[0]
   indices_Bx2 = tf.stack([
-      tf.range(batch_size, dtype=tf.int32),
-      tf.fill([batch_size], tf.cast(i, tf.int32))
+      tf.range(batch_size, dtype=tf.int64),
+      tf.fill([batch_size], tf.cast(i, tf.int64))
   ],
                          axis=-1)
-  return tf.tensor_scatter_nd_update(tensor_BxL, indices_Bx2, tf.cast(updates_B, tf.int32))
+  return tf.tensor_scatter_nd_update(tensor_BxL, indices_Bx2, tf.cast(updates_B, tf.int64))
 
 
 def inplace_update_i2(tensor_BxL, updates_B, i):
