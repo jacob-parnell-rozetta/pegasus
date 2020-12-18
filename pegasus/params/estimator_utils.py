@@ -118,6 +118,10 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
         loss, outputs = model_params.model()(features, training)
     else:
       XENT_loss, outputs = model_params.model()(features, training)
+      # test double sampling
+      # XENT_loss, outputs = model_params.model().double_sampling(features, training,
+      #                                                           model_params.batch_size,
+      #                                                           features["targets"].get_shape().as_list()[1])
 
     # TPU requires outputs all have batch dimension and doesn't handle scalar.
     # Tile all scalars to 1 dimension vector.

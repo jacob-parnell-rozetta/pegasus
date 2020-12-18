@@ -154,3 +154,58 @@ class TransformerEncoderDecoderModel(base.BaseModel):
     decodes_BxT, output_scores, logits_BxTxV = decoding.left2right_decode(symbols_to_logits_fn, cache, B, T,
                                                                           V, beam_size, **beam_kwargs)
     return {"outputs": decodes_BxT}, output_scores, logits_BxTxV
+
+  def double_sampling(self, features, training, batchsize, seqlen):
+    if "inputs" not in features or "targets" not in features:
+      raise ValueError("Require inputs and targets keys in features.")
+
+    # First "loop" - uses ground truth to supplement
+    context = self._encode(features, training)
+    self._context = context
+    targets_BxT = features["targets"]
+    bias_1xTxT = attention.upper_triangle_bias(
+        tf.shape(targets_BxT)[1], self._dtype)
+    states_BxTxD = self._embedding_layer(targets_BxT, True)
+    states_BxTxD = tf.pad(states_BxTxD, [[0, 0], [1, 0], [0, 0]])[:, :-1, :]
+    states_BxTxD = timing.add_time_signal(states_BxTxD)
+    states_BxTxD = self._dropout_fn(states_BxTxD, training)
+    with tf.variable_scope(self._decoder_scope_name, reuse=tf.AUTO_REUSE):
+      states_BxTxD = transformer_block.stack(self._decoder_layers, training,
+                                             states_BxTxD, bias_1xTxT,
+                                             context["memory"],
+                                             context["memory_bias"])
+      states_BxTxD = contrib_layers.layer_norm(states_BxTxD, begin_norm_axis=2)
+    logits_BxTxV = self._embedding_layer(states_BxTxD, False)
+    targets_mask_BxT = tf.cast(tf.greater(targets_BxT, 0), self._dtype)
+
+    # argmax the logits to get teacher-forcing sequence
+    new_input = tf.reshape(tf.math.argmax(logits_BxTxV, axis=2), [batchsize, seqlen])
+
+    # Second "loop" - uses predicted sequence as input
+    context_2 = self._encode(features, training)
+    # targets_BxT = features["targets"]
+    bias_1xTxT_2 = attention.upper_triangle_bias(
+        tf.shape(new_input)[1], self._dtype)
+    states_BxTxD_2 = self._embedding_layer(new_input, True)
+    states_BxTxD_2 = tf.pad(states_BxTxD_2, [[0, 0], [1, 0], [0, 0]])[:, :-1, :]
+    states_BxTxD_2 = timing.add_time_signal(states_BxTxD_2)
+    states_BxTxD_2 = self._dropout_fn(states_BxTxD_2, training)
+    with tf.variable_scope(self._decoder_scope_name, reuse=tf.AUTO_REUSE):
+        states_BxTxD_2 = transformer_block.stack(self._decoder_layers, training,
+                                               states_BxTxD_2, bias_1xTxT_2,
+                                               context_2["memory"],
+                                               context_2["memory_bias"])
+        states_BxTxD_2 = contrib_layers.layer_norm(states_BxTxD_2, begin_norm_axis=2)
+    logits_BxTxV_2 = self._embedding_layer(states_BxTxD_2, False)
+    targets_mask_BxT_2 = tf.cast(tf.greater(new_input, 0), self._dtype)
+
+    XENT_loss = tf.losses.softmax_cross_entropy(
+        tf.one_hot(new_input, self._vocab_size),
+        logits_BxTxV_2,
+        label_smoothing=self._label_smoothing,
+        weights=targets_mask_BxT_2)
+
+    # want the one hot targets for sampling
+    one_hot_targets = tf.one_hot(new_input, self._vocab_size)
+
+    return XENT_loss, {"logits1": logits_BxTxV, "logits2": logits_BxTxV_2, "targets": targets_BxT}
