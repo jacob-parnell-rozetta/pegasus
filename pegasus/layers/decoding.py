@@ -88,7 +88,7 @@ def inplace_update_i(tensor_BxL, updates_B, i):
       tf.fill([batch_size], tf.cast(i, tf.int64))
   ],
                          axis=-1)
-  return tf.tensor_scatter_nd_update(tensor_BxL, indices_Bx2, tf.cast(updates_B, tf.int64))
+  return tf.tensor_scatter_nd_update(tensor_BxL, indices_Bx2, updates_B)
 
 
 def inplace_update_i2(tensor_BxL, updates_B, i):
@@ -100,6 +100,14 @@ def inplace_update_i2(tensor_BxL, updates_B, i):
   ],
                          axis=-1)
   return tf.tensor_scatter_nd_update(tensor_BxL, indices_Bx2, tf.cast(updates_B, tf.float32))
+
+
+def test_py_func(logits_BxV, top_k, top_p, temperature, decodes_BxT, i, logits_BxTxV):
+    logits_BxV = process_logits(logits_BxV, top_k, top_p, temperature)  # returns z
+    decodes_BxT = inplace_update_i(decodes_BxT, tf.argmax(logits_BxV, -1), i)  # ids of argmax(logits)
+    decodes_BxT = tf.cast(tf.stop_gradient(decodes_BxT), tf.int64)  # remove from graph
+    logits_BxTxV = inplace_update_i2(logits_BxTxV, logits_BxV, i)  # logits sequence x vocab
+    return decodes_BxT, logits_BxTxV
 
 
 def left2right_decode(symbols_to_logits_fn,
