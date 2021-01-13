@@ -1,12 +1,7 @@
 # Mass experiment tests
-# GIGAWORD
-# nohup python3 pegasus/bin/train.py --params=gigaword_transformer --param_overrides=vocab_filename=ckpt/pegasus_ckpt/c4.unigram.newline.10pct.96000.model,train_pattern=tfds:gigaword-train-take_1000,batch_size=1,learning_rate=0.0005,train_steps=2000 --train_init_checkpoint=ckpt/experiments/xent1/gigaword_1k/model.ckpt-6001 --model_dir=ckpt/pegasus_ckpt/gigaword_test/ > gigaword_train.txt
-# nohup python3 pegasus/bin/evaluate.py --params=gigaword_transformer --param_overrides=vocab_filename=ckpt/pegasus_ckpt/c4.unigram.newline.10pct.96000.model,batch_size=1,beam_size=1 --model_dir=ckpt/pegasus_ckpt/gigaword_test/model.ckpt-2000 --evaluate_test > gigaword_eval.txt
-
-# echo "CNN/DM"
-# nohup python3 pegasus/bin/train.py --params=cnn_dailymail_transformer --param_overrides=vocab_filename=ckpt/pegasus_ckpt/c4.unigram.newline.10pct.96000.model,train_pattern=tfds:cnn_dailymail/plain_text-train-take_1000,batch_size=1,learning_rate=0.0005,train_steps=2000 --train_init_checkpoint=ckpt/experiments/xent1/cnndm_1k/model.ckpt-6001 --model_dir=ckpt/experiments/reinforce/cnndm_1k_validation_greedy_teacher/0.1x > cnndm_val_greedytf_0.1x_train.txt
-# nohup python3 pegasus/bin/evaluate.py --params=cnn_dailymail_transformer --param_overrides=vocab_filename=ckpt/pegasus_ckpt/c4.unigram.newline.10pct.96000.model,batch_size=1,beam_size=1 --model_dir=ckpt/experiments/reinforce/cnndm_1k_validation_greedy_teacher/0.1x/model.ckpt-2000 > cnndm_val_greedytf_0.1x_eval.txt
-
+echo "CNN/DM"
+nohup python3 pegasus/bin/train.py --params=cnn_dailymail_transformer --param_overrides=vocab_filename=ckpt/pegasus_ckpt/c4.unigram.newline.10pct.96000.model,train_pattern=tfds:cnn_dailymail/plain_text-train-take_1000,batch_size=1,learning_rate=0.0005,train_steps=2000 --train_init_checkpoint=ckpt/experiments/xent1/cnndm_1k/model.ckpt-6001 --model_dir=ckpt/experiments/reinforce/cnndm_lsum_test  > cnndm_lsum_0.9x_train.txt
+nohup python3 pegasus/bin/evaluate.py --params=cnn_dailymail_transformer --param_overrides=vocab_filename=ckpt/pegasus_ckpt/c4.unigram.newline.10pct.96000.model,batch_size=1,beam_size=1 --model_dir=ckpt/experiments/reinforce/cnndm_lsum_test/model.ckpt-2000 --evaluate_test > cnndm_lsum_0.9x_eval.txt
 
 # RUN ALL
 echo "AESLC"
@@ -37,6 +32,6 @@ echo "BILLSUM"
 nohup python3 pegasus/bin/train.py --params=billsum_transformer --param_overrides=vocab_filename=ckpt/pegasus_ckpt/c4.unigram.newline.10pct.96000.model,train_pattern=tfds_transformed:billsum-train-take_1000,batch_size=1,learning_rate=0.0005,train_steps=2000 --train_init_checkpoint=ckpt/experiments/xent1/billsum_1k/model.ckpt-9001 --model_dir=ckpt/experiments/reinforce/validation_tests/billsum_1k_greedy_tf/0.1 > billsum_val_greedytf_0.1x_train.txt
 nohup python3 pegasus/bin/evaluate.py --params=billsum_transformer --param_overrides=vocab_filename=ckpt/pegasus_ckpt/c4.unigram.newline.10pct.96000.model,batch_size=1,beam_size=1 --model_dir=ckpt/experiments/reinforce/validation_tests/billsum_1k_greedy_tf/0.1/model.ckpt-2000 > billsum_val_greedytf_0.1x_eval.txt
 
-
 # long test
-# nohup python3 pegasus/bin/train.py --params=aeslc_transformer --param_overrides=vocab_filename=ckpt/pegasus_ckpt/c4.unigram.newline.10pct.96000.model,train_pattern=tfds:aeslc-train,batch_size=1,learning_rate=0.0005,train_steps=400000 --train_init_checkpoint=ckpt/pegasus_ckpt/model.ckpt-1500000 --model_dir=ckpt/pegasus_ckpt/aeslctest > aeslctest.txt
+echo "EXTRA"
+nohup python3 pegasus/bin/train.py --params=aeslc_transformer --param_overrides=vocab_filename=ckpt/pegasus_ckpt/c4.unigram.newline.10pct.96000.model,train_pattern=tfds:aeslc-train,batch_size=1,learning_rate=0.0005,train_steps=500000 --train_init_checkpoint=ckpt/pegasus_ckpt/model.ckpt-1500000 --model_dir=ckpt/pegasus_ckpt/aeslctest > aeslctest.txt
