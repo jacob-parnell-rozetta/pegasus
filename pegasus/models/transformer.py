@@ -210,7 +210,7 @@ class TransformerEncoderDecoderModel(base.BaseModel):
               if targets2[i] == 0:  # padded token
                 return i
               else:  # if not 1, still needs a number to refer to
-                  return max_len
+                return max_len
 
           ref_len = tf.py_function(f4, (i, targets_BxT, max_decode_len), tf.int32)
           return i < ref_len  # T/F -> will change depending on padded token presence
