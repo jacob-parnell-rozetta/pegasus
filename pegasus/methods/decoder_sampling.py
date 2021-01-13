@@ -1,4 +1,5 @@
 import tensorflow as tf
+from pegasus.layers.decoding import process_logits, inplace_update_i
 
 
 def iid_sampling(logp, max_seq_len, greedy=True, soft=False, topk=False, k=2):
@@ -137,3 +138,21 @@ def beam_sampling(model_params, features, max_seq_len, batch_index, sequence_ind
             "logits1_BxTxV": beam_dict["beam_1_logits"],
             "ids2": preds2, "sent_score2": preds_score2, "logp2": logp2_BxT, "logp2_BxTxV": logp2_BxTxV,
             "ids3": preds3, "sent_score3": preds_score3, "logp3": logp3_BxT, "logp3_BxTxV": logp3_BxTxV}
+
+
+def iid_process_logits(logits_BxTxV, max_decode_len, batchsize, vocab_size, top_k=0, top_p=0.0, temperature=0.0):
+    # loop over logits along T axis, and process similar to decoding
+    def logits_loop(i, decode_BxT, logits_BxTxV):
+        logits_BxV = tf.reshape(logits_BxTxV[0][i], [batchsize, vocab_size])
+        logits_BxV = process_logits(logits_BxV, top_k, top_p, temperature)
+        sampled_BxT = inplace_update_i(decode_BxT, tf.argmax(logits_BxV, -1), i)
+        return i + 1, sampled_BxT, logits_BxTxV
+
+    def loop_cond(i, decode_BxT, logits_BxTxV):
+        return i < max_decode_len
+
+    init_decode_BxT = tf.zeros([batchsize, max_decode_len], tf.int64)
+    _, sampled_BxT, _ = tf.while_loop(loop_cond, logits_loop,
+                                      [tf.constant(0, tf.int64), init_decode_BxT, logits_BxTxV])
+
+    return tf.reshape(sampled_BxT, [batchsize, max_decode_len])

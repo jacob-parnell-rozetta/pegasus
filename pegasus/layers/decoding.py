@@ -102,12 +102,12 @@ def inplace_update_i2(tensor_BxL, updates_B, i):
   return tf.tensor_scatter_nd_update(tensor_BxL, indices_Bx2, tf.cast(updates_B, tf.float32))
 
 
-def test_py_func(logits_BxV, top_k, top_p, temperature, decodes_BxT, i, logits_BxTxV):
-    logits_BxV = process_logits(logits_BxV, top_k, top_p, temperature)  # returns z
-    decodes_BxT = inplace_update_i(decodes_BxT, tf.argmax(logits_BxV, -1), i)  # ids of argmax(logits)
-    decodes_BxT = tf.cast(tf.stop_gradient(decodes_BxT), tf.int64)  # remove from graph
-    logits_BxTxV = inplace_update_i2(logits_BxTxV, logits_BxV, i)  # logits sequence x vocab
-    return decodes_BxT, logits_BxTxV
+# def test_py_func(logits_BxV, top_k, top_p, temperature, decodes_BxT, i, logits_BxTxV):
+#     logits_BxV = process_logits(logits_BxV, top_k, top_p, temperature)  # returns z
+#     decodes_BxT = inplace_update_i(decodes_BxT, tf.argmax(logits_BxV, -1), i)  # ids of argmax(logits)
+#     decodes_BxT = tf.cast(tf.stop_gradient(decodes_BxT), tf.int64)  # remove from graph
+#     logits_BxTxV = inplace_update_i2(logits_BxTxV, logits_BxV, i)  # logits sequence x vocab
+#     return decodes_BxT, logits_BxTxV
 
 
 def left2right_decode(symbols_to_logits_fn,
@@ -185,6 +185,7 @@ def left2right_decode(symbols_to_logits_fn,
     # init_logp_BxT = tf.zeros([batch_size, max_decode_len], dtype=tf.float32)  # logp sequence
     # init_logp_BxTxV = tf.zeros([batch_size, max_decode_len, vocab_size], dtype=tf.float32)  # logp sequence x vocab
     init_logits_BxTxV = tf.zeros([batch_size, max_decode_len, vocab_size], dtype=tf.float32)  # logits sequence x vocab
+    # swap_mem = True if training else False
 
     _, decodes, _, logits_BxTxV = tf.while_loop(
         loop_cond, decode_loop,

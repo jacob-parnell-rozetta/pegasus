@@ -22,7 +22,7 @@ import numpy as np
 from pegasus.ops import public_parsing_ops
 from pegasus.eval.rouge_tensors import evaluate_r1, evaluate_r2, evaluate_rl
 from pegasus.models.control_variate import ffn_baseline, control_variate, Q_func
-from pegasus.methods.decoder_sampling import iid_sampling, non_beam_sampling, beam_sampling
+from pegasus.methods.decoder_sampling import iid_sampling, non_beam_sampling, beam_sampling, iid_process_logits
 from pegasus.methods.reinforce import rouge_decoding, iid_log_probs, rouge_token
 from pegasus.methods.risk import risk_loss
 from pegasus.methods.relax import create_variables, create_cv_target, create_variables_from_samples
@@ -47,7 +47,7 @@ def create_estimator(master,
                      train_init_checkpoint=None,
                      train_warmup_steps=10000,
                      save_checkpoints_steps=1000,
-                     keep_checkpoint_max=5):
+                     keep_checkpoint_max=1):
   """Returns an tensorflow estimator."""
   # Define GPU Config for session
   config = tf.ConfigProto(allow_soft_placement=True, log_device_placement=False)
@@ -68,9 +68,9 @@ def create_estimator(master,
                                    include_features_in_predictions, decode_keys,
                                    train_init_checkpoint, train_warmup_steps),
       use_tpu=use_tpu,  # false
-      train_batch_size=model_params.batch_size * num_shards,
-      eval_batch_size=model_params.batch_size * num_shards,
-      predict_batch_size=model_params.batch_size * num_shards,
+      train_batch_size=model_params.batch_size * num_shards,  # batch_size * 1 by default
+      eval_batch_size=model_params.batch_size * num_shards,  # batch_size * 1 by default
+      predict_batch_size=model_params.batch_size * num_shards,  # batch_size * 1 by default
       config=run_config)
 
 
@@ -118,10 +118,9 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
         loss, outputs = model_params.model()(features, training)
     else:
       XENT_loss, outputs = model_params.model()(features, training)
-      # test double sampling
-      # XENT_loss, outputs = model_params.model().double_sampling(features, training,
-      #                                                           model_params.batch_size,
-      #                                                           features["targets"].get_shape().as_list()[1])
+      # XENT_loss, outputs = model_params.model().double_sampling(features, training, model_params.batch_size,
+      #                                                           features["targets"].get_shape().as_list()[1],
+      #                                                           mixed=True)
 
     # TPU requires outputs all have batch dimension and doesn't handle scalar.
     # Tile all scalars to 1 dimension vector.
@@ -146,22 +145,37 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       ###############################################################################################################
       ##### VARIABLES ###############################################################################################
       # Create index tensors to stack and get corresponding probabilities from logp
-      max_seq_len = outputs["targets"].get_shape().as_list()[1]
-      sequence_index = tf.constant(np.arange(0, max_seq_len))
-      batch_index = tf.constant(np.zeros(sequence_index.get_shape().as_list()[0]), dtype=tf.int64)
+      # max_seq_len = outputs["targets"].get_shape().as_list()[1]
+      # sequence_index = tf.constant(np.arange(0, max_seq_len))
+      # batch_index = tf.constant(np.zeros(sequence_index.get_shape().as_list()[0]), dtype=tf.int64)
 
       ##### I.I.D SAMPLING ##########################################################################################
+      """ Here we sample the tokens that are produced by teacher forcing. """
       # Normalise logits to log-prob, and compute Gumbel samples with location
       # logit_probs = tf.math.softmax(outputs["logits"], axis=2)  # should not be x <= 0
       # clipped_logit_probs = tf.clip_by_value(logit_probs, 1e-8, 1.0)
       # logp = tf.log(clipped_logit_probs)
 
       # RETURNS TEACHER FORCING SAMPLED TOKEN VARIATIONS
-      # argmax_logp_index, soft_logp_index, topk_out, z = iid_sampling(logp, max_seq_len, greedy=True, soft=True,
-      #                                                                topk=True, k=2)
+      # argmax_logp_index, soft_logp_index, topk_out, z = iid_sampling(logp, max_seq_len, greedy=True, soft=False,
+      #                                                                topk=False, k=2)
       # topk_probs, topk_indices = topk_out
+      # TEST SAMPLING METHODS PROVIDED BY PEGASUS
+      # sampled_BxT = iid_process_logits(outputs["logits"], max_seq_len, model_params.batch_size,
+      #                                  outputs["logits"].get_shape().as_list()[-1],
+      #                                  top_k=0, top_p=0.9, temperature=1.0)
 
       ##### DECODER SAMPLING ########################################################################################
+      """ Here we sample the tokens using the decoder. Beam size == 1. 
+            PREDS: IDs
+            LOGP: transformed logits
+            SCORE: scalar score using RISK trick
+            LOGP: [BxTxV] beam logp
+            LOGITS: [BxTxV] beam logits
+            the dictionary contains the following keys: {ids, logp_BxT, sent_score, logp_BxTxV}
+      # Note: the logp_BxTxV are analogous to z -> should be used for RELAX, preds are the BxT of these -> b=H(z), and
+      # logp are the corresponding values (score is normalised to sentence score).
+      """
       # greedy_beam_params = {"_beam": 3, "top_k": 0, "top_p": 0.0, "temperature": 0.0}
       # random_beam_params = {"_beam": 3, "top_k": 0, "top_p": 0.0, "temperature": 1.0}
       # topk_beam_params = {"_beam": 3, "top_k": 10000, "top_p": 0.0, "temperature": 1.0}
@@ -187,6 +201,8 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       #                           beam_params=topp_beam_params)
 
       ##### RELAX VARIABLES #########################################################################################
+      """ Here we create the variables for RELAX. Pass in the logp, logits, and z that has already been 
+      sampled/created from manipulation. Will return z_tilde [BxTxV] and logp(b) [BxT]. """
       # TEACHER FORCING SAMPLING
       # z_tilde, logp_b = create_variables(z, logp, batch_index, sequence_index, clipped_logit_probs)
 
@@ -195,10 +211,11 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       #                                                 random_dict["ids"], batch_index, sequence_index)
 
       ##### TEXT AND ROUGE ##########################################################################################
+      """ Here we first convert sequences to text, and calculate corresponding rouge scores/losses. """
       # target_text = rouge_decoding(outputs["targets"], model_params)  # TARGET SAMPLES
-      # argmax_pred_text = rouge_decoding(topk_dict["ids1"], model_params)  # ARGMAX SAMPLES
-      # soft_pred_text = rouge_decoding(random_dict["ids1"], model_params)  # SOFTMAX SAMPLES
-      # additional_pred_text = rouge_decoding(topk_dict["ids3"], model_params)  # ADDITIONAL SAMPLES
+      # argmax_pred_text = rouge_decoding(argmax_logp_index, model_params)  # ARGMAX SAMPLES
+      # soft_pred_text = rouge_decoding(soft_logp_index, model_params)  # SOFTMAX SAMPLES
+      # additional_pred_text = rouge_decoding(sampled_BxT, model_params)  # ADDITIONAL SAMPLES
 
       # Token-level ROUGE
       # ROUGE_token = tf.py_function(rouge_token,(outputs["targets"], random_dict["ids"], 0, 0), tf.float32)
@@ -210,19 +227,21 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # rouge_loss_extra = -tf.py_function(evaluate_rl, (target_text, additional_pred_text, 2), tf.float32)
 
       ##### REINFORCE LOSS ##########################################################################################
+      """ Calculate standard REINFORCE loss. Can be document-level (score using RISK trick), or token-level [BxT]. """
       # FIND CORRESPONDING LOG_PROBS OF THE I.I.D SAMPLED TOKENS
       # ARGMAX -> logp(argmax(y))
       # argmax_logp = iid_log_probs(argmax_logp_index, batch_index, sequence_index, logp)
       # SOFTMAX -> logp(sample_y)
       # softmax_logp = iid_log_probs(soft_logp_index, batch_index, sequence_index, logp)
       # ADDITIONAL
-      # additional_logp = iid_log_probs(topk_indices_2, batch_index, sequence_index, logp)
+      # additional_logp = iid_log_probs(sampled_BxT, batch_index, sequence_index, logp)
 
       # CHANGE BELOW IF USING DECODER SAMPLED TOKENS/SCORES
       # weight the logp by ROUGE score (neg ROUGE_loss), sum values
-      # reinforce_loss = tf.reduce_sum(tf.multiply(rouge_loss_soft, random_dict["logp_BxT"]))
+      # reinforce_loss = tf.reduce_sum(tf.multiply(rouge_loss_argmax, argmax_logp))
 
       ##### REINFORCE w/ BASELINE ###################################################################################
+      """ Calculate RwB using Socher's loss function (2017). Optional: use a Q_func as baseline. """
       # improve the probs of the SOFT labels (soft - hard)*soft_logp
       # improve the probs of the HARD labels (hard - soft)*hard_logp
 
@@ -232,16 +251,25 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # loss_difference = tf.subtract(rouge_loss_soft, rouge_loss_argmax)
       # reinforce_baseline = tf.reduce_sum(tf.multiply(loss_difference, softmax_logp))
 
+      # BASELINE: HINGE LOSS
+      # rouge_soft = -rouge_loss_soft
+      # rouge_hard = -rouge_loss_argmax
+      # hinge = -tf.maximum((rouge_soft - rouge_hard), 0)
+      # hinge_baseline = tf.reduce_sum(tf.multiply(hinge, softmax_logp))
+
       ##### REINFORCE w/ THRESHOLD ##################################################################################
+      """ Calculate REINFORCE with a constant threshold as the baseline. """
       # we take output of ROUGE score as ROUGE_loss = -ROUGE score
       # intermediate_loss = tf.reduce_sum(tf.multiply(tf.subtract(0.3, -rouge_loss_argmax), argmax_logp))
 
       ##### EXPECTED RISK MINIMISATION ##############################################################################
+      """ Calculate the RISK loss using n sequences from sampling process. """
       # L_risk = risk_loss(model_params.batch_size, max_seq_len,
       #                    rouge_losses=[rouge_loss_argmax, rouge_loss_soft, rouge_loss_extra],
       #                    logps=[topk_dict["logp1"], topk_dict["logp2"], topk_dict["logp3"]], n=3)
 
       ##### MIXED LOSS ##############################################################################################
+      """ Implement a mixed loss function that is weighted by an alpha term. """
       # combined_loss = tf.math.add(tf.multiply(tf.constant(0.3, dtype=tf.float32), XENT_loss),
       #                             tf.multiply(tf.constant(0.7, dtype=tf.float32), L_risk))
 
@@ -250,10 +278,12 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
       # combined_loss = tf.cond(constraint > 0.8, lambda: hard_reinforce_loss, lambda: XENT_loss)
 
       ##### RELAX CONTROL VARIATE ###################################################################################
+      """ Prepare the target sequence for use in the control variate. """
       # z = random_dict["logp_BxTxV"]
       # z_target, zt_target = create_cv_target(outputs, batch_index, sequence_index, z, z_tilde)
 
       ##### RELAX LOSS ##############################################################################################
+      """ Manipulate z and z_tilde using the Q_func to mimic ROUGE loss. """
       # with tf.variable_scope("Q_func"):
       #     c_z = Q_func(z, z_target)
 
@@ -333,7 +363,8 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
                                                        # "rouge_loss_hard": rouge_loss_argmax,
                                                        # "rouge_loss_soft": rouge_loss_soft,
                                                        # "rouge_loss_extra": rouge_loss_extra,
-                                                       # "reinforce_loss": soft_reinforce_baseline,
+                                                       # "reinforce_loss": reinforce_loss,
+                                                       # "risk_loss": L_risk,
                                                        # "XENT_loss": XENT_loss,
                                                        }))
 
