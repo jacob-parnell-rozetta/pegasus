@@ -188,40 +188,58 @@ class TransformerEncoderDecoderModel(base.BaseModel):
       # new_input = iid_process_logits(logits_BxTxV, seqlen, batchsize, logits_BxTxV.get_shape().as_list()[-1],
       #                                top_k=0, top_p=0.9, temperature=1.0)
 
-      def tensor_loop(i, max_decode_len, logits, new_input, unused_targets_BxT):
-          def f2(logits_BxTxV, new_input):
-              topk_probs, topk_indices = tf.math.top_k(logits_BxTxV[0, i], k=2)
-              topk_inds2 = tf.slice(topk_indices, [1], [1, ])
-              return tf.tensor_scatter_nd_update(new_input, [[0, i]], tf.cast(topk_inds2, tf.int64))
+      # replace repeated EOS tokens with second-argmax
+      # def tensor_loop(i, max_decode_len, logits, new_input, unused_targets_BxT):
+      #     def f2(logits_BxTxV, new_input):
+      #         topk_probs, topk_indices = tf.math.top_k(logits_BxTxV[0, i], k=2)
+      #         topk_inds2 = tf.slice(topk_indices, [1], [1, ])
+      #         return tf.tensor_scatter_nd_update(new_input, [[0, i]], tf.cast(topk_inds2, tf.int64))
 
-          def f3(i, new_input):
-              new_input2 = new_input[0].numpy().tolist()
-              return True if new_input2[0][i] == 1 else False
+      #     def f3(i, new_input):
+      #         new_input2 = new_input[0].numpy().tolist()
+      #         return True if new_input2[0][i] == 1 else False
 
-          new_input = tf.cond(tf.py_function(f3, (i, [new_input]), tf.bool), lambda: f2(logits_BxTxV, new_input),
-                              lambda: new_input)
-          return i + 1, max_decode_len, logits, new_input, unused_targets_BxT
+      #     new_input = tf.cond(tf.py_function(f3, (i, [new_input]), tf.bool), lambda: f2(logits_BxTxV, new_input),
+      #                         lambda: new_input)
+      #     return i + 1, max_decode_len, logits, new_input, unused_targets_BxT
 
-      def finish_cond_ref(i, max_decode_len, unused_logits, unused_new_input, targets_BxT):
+      # def finish_cond_ref(i, max_decode_len, unused_logits, unused_new_input, targets_BxT):
           # add here condition to return reference summary length
 
-          def f4(i, targets, max_len):
-              targets2 = targets[0].numpy().tolist()
-              if targets2[i] == 0:  # padded token
-                return i
-              else:  # if not 1, still needs a number to refer to
-                return max_len
+      #     def f4(i, targets, max_len):
+      #         targets2 = targets[0].numpy().tolist()
+      #         if targets2[i] == 0:  # padded token
+      #           return i
+      #         else:  # if not 1, still needs a number to refer to
+      #           return max_len
 
-          ref_len = tf.py_function(f4, (i, targets_BxT, max_decode_len), tf.int32)
-          return i < ref_len  # T/F -> will change depending on padded token presence
+      #     ref_len = tf.py_function(f4, (i, targets_BxT, max_decode_len), tf.int32)
+      #     return i < ref_len  # T/F -> will change depending on padded token presence
 
-      def finish_cond_max(i, max_decode_len, unused_logits, unused_new_input, unused_targets_BxT):
-          return i < max_decode_len
+      # def finish_cond_max(i, max_decode_len, unused_logits, unused_new_input, unused_targets_BxT):
+      #     return i < max_decode_len
 
-      _, _, _, new_input, _ = tf.while_loop(finish_cond_max, tensor_loop,
-                                            [0, seqlen, logits_BxTxV, new_input, targets_BxT])
+      # _, _, _, new_input, _ = tf.while_loop(finish_cond_max, tensor_loop,
+      #                                       [0, seqlen, logits_BxTxV, new_input, targets_BxT])
 
-      # print(new_input)
+      # find target length -> py.func() as it has to be outside graph
+      def f5(targets_BxT):
+          try:
+              exist = targets_BxT[0].numpy().tolist().index(0)
+          except ValueError:
+              exist = targets_BxT.get_shape().as_list()[-1]
+
+          return tf.Variable(exist, shape=()).read_value()
+
+      cut_off = tf.py_function(f5, [targets_BxT], tf.int32)
+
+      # implement cut_off for new_input
+      new_input2 = tf.slice(new_input, [0, 0], [1, cut_off])
+      # reshaping from unknown to known gives it tensor shape for second loop
+      new_input = tf.reshape(tf.pad(new_input2, [[0, 0], [0, new_input.get_shape().as_list()[-1] - cut_off]],
+                                    "CONSTANT"), [batchsize, seqlen])
+
+      print(new_input)  # should be [BxT], and "cut-off" to target length with same padding
 
       # Second "loop" - uses predicted sequence as input
       context_2 = self._encode(features, training)
