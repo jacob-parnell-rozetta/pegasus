@@ -188,7 +188,6 @@ class TransformerEncoderDecoderModel(base.BaseModel):
       # new_input = iid_process_logits(logits_BxTxV, seqlen, batchsize, logits_BxTxV.get_shape().as_list()[-1],
       #                                top_k=0, top_p=0.9, temperature=1.0)
 
-      # replace repeated EOS tokens with second-argmax
       # def tensor_loop(i, max_decode_len, logits, new_input, unused_targets_BxT):
       #     def f2(logits_BxTxV, new_input):
       #         topk_probs, topk_indices = tf.math.top_k(logits_BxTxV[0, i], k=2)
@@ -225,21 +224,20 @@ class TransformerEncoderDecoderModel(base.BaseModel):
       # find target length -> py.func() as it has to be outside graph
       def f5(targets_BxT):
           try:
-              exist = targets_BxT[0].numpy().tolist().index(0)
+              exist = targets_BxT[0].numpy().tolist().index(1)
+              # do they all have an EOS?
           except ValueError:
               exist = targets_BxT.get_shape().as_list()[-1]
 
-          return tf.Variable(exist, shape=()).read_value()
+          return tf.Variable(exist, shape=()).read_value()  # token prior is the last token
 
       cut_off = tf.py_function(f5, [targets_BxT], tf.int32)
 
       # implement cut_off for new_input
       new_input2 = tf.slice(new_input, [0, 0], [1, cut_off])
-      # reshaping from unknown to known gives it tensor shape for second loop
       new_input = tf.reshape(tf.pad(new_input2, [[0, 0], [0, new_input.get_shape().as_list()[-1] - cut_off]],
                                     "CONSTANT"), [batchsize, seqlen])
 
-      print(new_input)  # should be [BxT], and "cut-off" to target length with same padding
 
       # Second "loop" - uses predicted sequence as input
       context_2 = self._encode(features, training)
@@ -265,11 +263,11 @@ class TransformerEncoderDecoderModel(base.BaseModel):
                                      p=[0.75, 0.25])
         mixed_logits = tf.where(bool_mask, logits_BxTxV, logits_BxTxV_2)
       else:
-        mixed_logits = None
+        mixed_logits = tf.zeros(logits_BxTxV.get_shape().as_list())  # empty - satisfies exit criteria
 
       XENT_loss = tf.losses.softmax_cross_entropy(
           tf.one_hot(new_input, self._vocab_size),
-          logits_BxTxV_2,
+          mixed_logits,
           label_smoothing=self._label_smoothing,
           weights=targets_mask_BxT_2)
 

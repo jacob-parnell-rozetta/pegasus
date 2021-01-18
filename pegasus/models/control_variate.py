@@ -79,3 +79,18 @@ def Q_func(z, target):
 
     norm_out = -tf.nn.sigmoid(flat_out)  # sigmoid for normalisation, minus for correct range
     return norm_out
+
+
+def rwb_Q_func(pred, target):
+    # assuming the target is BxT and pred is also BxT -> the logps
+    hs_len = target.get_shape().as_list()[-1]
+
+    h1_pred = tf.compat.v1.layers.dense(pred, hs_len, tf.nn.relu, name="q_pred", use_bias=True)
+    h1_target = tf.compat.v1.layers.dense(target, hs_len, tf.nn.relu, name="q_target", use_bias=True)
+
+    # concatenate
+    combined = tf.concat([h1_pred, h1_target], axis=1)
+    out = tf.compat.v1.layers.dense(combined, 1, name="q_out", use_bias=False)  # [1, 1]
+
+    norm_out = -tf.nn.sigmoid(out)  # sigmoid for normalisation, minus for correct range
+    return tf.squeeze(tf.squeeze(norm_out, -1), -1)  # returns as [1,1] -> [] scalar

@@ -21,7 +21,7 @@ from absl import logging
 import numpy as np
 from pegasus.ops import public_parsing_ops
 from pegasus.eval.rouge_tensors import evaluate_r1, evaluate_r2, evaluate_rl
-from pegasus.models.control_variate import ffn_baseline, control_variate, Q_func
+from pegasus.models.control_variate import ffn_baseline, control_variate, Q_func, rwb_Q_func
 from pegasus.methods.decoder_sampling import iid_sampling, non_beam_sampling, beam_sampling, iid_process_logits
 from pegasus.methods.reinforce import rouge_decoding, iid_log_probs, rouge_token
 from pegasus.methods.risk import risk_loss
@@ -247,6 +247,10 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
 
       # BASELINE: CONTROL VARIATE
       # ffn_output = control_variate(source, targets)
+      # with tf.variable_scope("Q_func"):
+      #   cv = rwb_Q_func(tf.reshape(softmax_logp, [1, 32]), tf.reshape(additional_logp, [1, 32]))
+
+      # cv_loss = tf.reduce_mean(tf.square(tf.subtract(rouge_loss_argmax, cv)))
 
       # loss_difference = tf.subtract(rouge_loss_soft, rouge_loss_argmax)
       # reinforce_baseline = tf.reduce_sum(tf.multiply(loss_difference, softmax_logp))
@@ -347,6 +351,7 @@ def _estimator_model_fn(use_tpu, model_params, model_dir,
 
       logging_hook = tf.train.LoggingTensorHook({"loss": XENT_loss,
                                                  # "variance_loss": variance_loss,
+                                                 # "cv_loss": cv_loss,
                                                  "learning_rate": lr,
                                                  "global_step": global_step,
                                                  }, every_n_iter=5)
